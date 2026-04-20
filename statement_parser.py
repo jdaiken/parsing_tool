@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 import pdfplumber
 
+from template_manager import detect_template, load_templates
 
 AMOUNT_RE = re.compile(r"\$?\d[\d,]*\.\d{2}")
 DATE_SLASH_RE = re.compile(r"^\d{2}/\d{2}/\d{4}")
@@ -375,6 +376,91 @@ def _parse_legacy_lines(
     return rows
 
 
+def _custom_direction(description: str, template: Dict) -> str:
+    text = (description or "").lower()
+    credit_terms = template.get("credit_keywords", [])
+    if any(term in text for term in credit_terms):
+        return "credit"
+    return template.get("default_direction", "debit")
+
+
+def _parse_custom_lines(
+    pages: List[str],
+    statement_id: str,
+    account_number: Optional[str],
+    statement_date: Optional[str],
+    template: Dict,
+) -> List[Dict]:
+    rows: List[Dict] = []
+    parse_style = template.get("parse_style", "slash_leading_amount_balance")
+    template_name = str(template.get("template_name", "custom_template")).strip() or "custom_template"
+
+    for page_number, page_text in enumerate(pages, start=1):
+        lines = [ln.strip() for ln in page_text.splitlines() if ln.strip()]
+        for line_number, line in enumerate(lines, start=1):
+            amounts = AMOUNT_RE.findall(line)
+            if not amounts:
+                continue
+
+            if parse_style == "slash_leading_amount_balance":
+                if not DATE_SLASH_RE.match(line):
+                    continue
+                date_text = line[:10]
+                body = line[10:].strip()
+                body_amounts = AMOUNT_RE.findall(body)
+                if not body_amounts:
+                    continue
+                amount = _to_amount(body_amounts[0])
+                running_balance = _to_amount(body_amounts[1]) if len(body_amounts) > 1 else None
+                description = body
+                for amt in body_amounts:
+                    description = description.replace(amt, "")
+                description = re.sub(r"\s+", " ", description).strip(" -")
+
+            elif parse_style == "date_dash_last_amount":
+                date_hits = DATE_DASH_RE.findall(line)
+                if not date_hits:
+                    continue
+                date_text = date_hits[0]
+                amount = _to_amount(amounts[-1])
+                running_balance = None
+                description = line
+                description = description.replace(amounts[-1], "")
+                for date_hit in date_hits:
+                    description = description.replace(date_hit, "")
+                description = re.sub(r"\s+", " ", description).strip(" -")
+            else:
+                continue
+
+            direction = _custom_direction(description, template)
+            debit = amount if direction == "debit" else None
+            credit = amount if direction == "credit" else None
+            check_match = re.search(r"\b(\d{3,6})\b", description)
+
+            rows.append(
+                {
+                    "statement_id": statement_id,
+                    "bank_format": f"custom:{template_name}",
+                    "account_number": account_number,
+                    "statement_date": statement_date,
+                    "txn_date": _safe_date(date_text, statement_date),
+                    "txn_date_raw": date_text,
+                    "description": description,
+                    "transaction_type": "check" if "check" in description.lower() else "statement",
+                    "direction": direction,
+                    "amount": amount,
+                    "debit": debit,
+                    "credit": credit,
+                    "running_balance": running_balance,
+                    "check_number": check_match.group(1) if check_match else None,
+                    "source_page": page_number,
+                    "source_line": line_number,
+                }
+            )
+
+    return rows
+
+
 def _build_flags(df: pd.DataFrame, large_txn_threshold: float) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(
@@ -476,13 +562,20 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
     pages = _extract_pdf_pages(file_bytes)
     full_text = "\n".join(pages)
     fmt = _detect_format(full_text)
+    templates = load_templates()
+    matched_template = detect_template(full_text, templates)
     meta = _parse_meta(full_text)
 
     statement_id = file_name.rsplit(".", 1)[0]
     account_number = meta.get("account_number")
     statement_date = meta.get("statement_date")
 
-    if fmt == "carson_bank_statement":
+    if matched_template:
+        rows = _parse_custom_lines(pages, statement_id, account_number, statement_date, matched_template)
+        if not rows:
+            rows = _parse_carson_lines(pages, statement_id, account_number, statement_date)
+            rows.extend(_parse_legacy_lines(pages, statement_id, account_number, statement_date))
+    elif fmt == "carson_bank_statement":
         rows = _parse_carson_lines(pages, statement_id, account_number, statement_date)
     elif fmt == "legacy_sectioned_statement":
         rows = _parse_legacy_lines(pages, statement_id, account_number, statement_date)
