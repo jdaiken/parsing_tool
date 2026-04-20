@@ -1,6 +1,6 @@
 # Statement Workpaper Parser
 
-Professional Streamlit app for converting bank statement PDFs into a forensic accounting workpaper in Excel.
+Basic Streamlit app for converting bank statement PDFs into a forensic accounting workpaper in Excel. This app right now only uses two very simple statements. Additional statements can be added later.
 
 ## Features
 - Upload one or more statement PDFs
