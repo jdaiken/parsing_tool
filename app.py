@@ -1,3 +1,10 @@
+"""
+Streamlit front-end for the Statement Workpaper Parser.
+
+Upload bank statement PDFs, parse transactions, review risk/reconciliation
+dashboards, export Excel workpapers, and manage custom bank-format templates.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -12,8 +19,11 @@ from statement_parser import ParseResult, parse_statement
 from template_manager import delete_template, extract_preview_text, load_templates, save_template
 from workpaper_export import build_workpaper
 
+# --- Page setup and branding ---
+
 st.set_page_config(page_title="Statement Workpaper Parser", page_icon=":bar_chart:", layout="wide")
 
+# Inject custom CSS for layout spacing and card-style sections.
 st.markdown(
     """
     <style>
@@ -27,6 +37,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+# Hero banner shown at the top of the main content area.
 st.markdown(
     """
     <div class="hero">
@@ -40,7 +51,11 @@ st.markdown(
 )
 
 
+# --- Display helpers ---
+
+
 def _display_category_name(cat: str) -> str:
+    """Map internal category codes to human-readable labels for charts and tables."""
     labels = {
         "deposit": "Deposit / Credit",
         "check": "Check",
@@ -56,14 +71,23 @@ def _display_category_name(cat: str) -> str:
 
 
 def _risk_badge(level: str) -> str:
+    """Return a colored emoji badge for transaction risk level."""
     return {"high": "🔴 High", "medium": "🟠 Medium", "low": "🟢 Low"}.get(str(level).lower(), "⚪ Unknown")
 
 
 def _severity_badge(level: str) -> str:
+    """Return a colored emoji badge for flag severity (same scale as risk)."""
     return {"high": "🔴 High", "medium": "🟠 Medium", "low": "🟢 Low"}.get(str(level).lower(), "⚪ Unrated")
 
 
 def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build per-statement reconciliation rows.
+
+    For each statement, sums credits/debits and compares the implied ending
+    balance (beginning + credits - debits) to the last running balance on the
+    statement. A difference within $0.01 is treated as reconciled.
+    """
     if transactions.empty:
         return pd.DataFrame(
             columns=[
@@ -80,6 +104,7 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
         )
     rows = []
     for statement_id, grp in transactions.groupby("statement_id", dropna=False):
+        # Preserve statement order: date, then PDF page/line position.
         ordered = grp.sort_values(["txn_date", "source_page", "source_line"]).copy()
         credits = float(pd.to_numeric(ordered["credit"], errors="coerce").fillna(0).sum())
         debits = float(pd.to_numeric(ordered["debit"], errors="coerce").fillna(0).sum())
@@ -91,6 +116,7 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
         status = "Needs Review"
         notes = "No running balance found; manual reconciliation required."
         if not running.empty:
+            # Derive opening balance by reversing the first transaction from its running balance.
             first_idx = running.index[0]
             first_row = ordered.loc[first_idx]
             first_credit_raw = pd.to_numeric(first_row.get("credit"), errors="coerce")
@@ -123,16 +149,23 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values("statement_id").reset_index(drop=True)
 
 
+# --- Sidebar: global options that affect parsing and export ---
+
 with st.sidebar:
     st.subheader("Guided Workflow")
     st.markdown('<div class="guide">1) Upload PDFs<br>2) Review dashboard<br>3) Export files</div>', unsafe_allow_html=True)
+    # Whether the exported workpaper includes a tab of raw PDF text per page.
     include_raw_text = st.checkbox("Include raw extracted text tab", value=True)
+    # Dollar amount above which transactions are flagged as "large" during parsing.
     large_txn_threshold = st.number_input("Large transaction threshold ($)", min_value=100.0, value=1000.0, step=100.0)
     st.caption(f"Custom templates loaded: {len(load_templates())}")
+
+# --- File upload and parsing ---
 
 uploads = st.file_uploader("Upload statement PDF files", type=["pdf"], accept_multiple_files=True)
 has_uploads = bool(uploads)
 
+# Empty DataFrame schemas used before any files are parsed.
 tx_columns = [
     "statement_id",
     "bank_format",
@@ -166,6 +199,7 @@ if has_uploads:
     parse_errors: List[str] = []
     for uploaded_file in uploads:
         try:
+            # Parse each PDF into transactions, risk flags, and optional raw text.
             result = parse_statement(uploaded_file.name, uploaded_file.getvalue(), large_txn_threshold)
             results.append(result)
         except Exception as exc:  # pragma: no cover
@@ -175,9 +209,12 @@ if has_uploads:
         for err in parse_errors:
             st.write(f"- {err}")
     if results:
+        # Merge parsed output from all successfully processed statements.
         all_transactions = pd.concat([r.transactions for r in results], ignore_index=True)
         all_flags = pd.concat([r.flags for r in results], ignore_index=True)
         all_raw = pd.concat([r.raw_text for r in results], ignore_index=True)
+
+# --- Aggregate metrics shared across dashboard tabs ---
 
 total_debits = float(pd.to_numeric(all_transactions.get("debit"), errors="coerce").fillna(0).sum()) if not all_transactions.empty else 0.0
 total_credits = float(pd.to_numeric(all_transactions.get("credit"), errors="coerce").fillna(0).sum()) if not all_transactions.empty else 0.0
@@ -190,6 +227,8 @@ avg_risk_score = float(pd.to_numeric(all_transactions.get("risk_score"), errors=
 flag_count = len(all_flags)
 reconciliation_df = _build_reconciliation_table(all_transactions)
 
+# --- Main tabbed UI ---
+
 overview_tab, transactions_tab, risk_tab, reconciliation_tab, export_tab, template_tab = st.tabs(
     ["Overview", "Transactions", "Risk and Flags", "Reconciliation", "Export Files", "Template Manager"]
 )
@@ -198,6 +237,7 @@ with overview_tab:
     if not has_uploads or all_transactions.empty:
         st.info("Upload at least one statement to view dashboard metrics.")
     else:
+        # Summary KPI cards: volume, risk, and cash flow totals.
         k1, k2, k3 = st.columns(3)
         k1.metric("Statements", statement_count)
         k2.metric("Transactions", tx_count)
@@ -211,6 +251,7 @@ with overview_tab:
         category_chart["category"] = category_chart["category"].map(_display_category_name)
         c1.markdown("#### Categories")
         c1.bar_chart(category_chart.set_index("category"))
+        # Fixed order so low/medium/high always appear even when a level has zero rows.
         risk_chart = all_transactions["risk_level"].value_counts().reindex(["high", "medium", "low"], fill_value=0).rename_axis("risk").to_frame("count")
         c2.markdown("#### Risk Levels")
         c2.bar_chart(risk_chart)
@@ -231,6 +272,7 @@ with transactions_tab:
             filtered = filtered[filtered["risk_level"].isin(selected_risks)]
         if search_term:
             filtered = filtered[filtered["description"].str.contains(search_term, case=False, na=False)]
+        # Highest-risk transactions first, then chronological within risk tier.
         filtered = filtered.sort_values(["risk_score", "txn_date"], ascending=[False, True])
         filtered["txn_category"] = filtered["txn_category"].map(_display_category_name)
         filtered["risk_badge"] = filtered["risk_level"].map(_risk_badge)
@@ -274,6 +316,7 @@ with export_tab:
     if not has_uploads or all_transactions.empty:
         st.info("Upload statements to export workbooks.")
     else:
+        # Build Excel byte streams for forensic workpaper and summarized financial statements.
         workpaper_bytes = build_workpaper(all_transactions, all_flags, all_raw if include_raw_text else pd.DataFrame(), datetime.now())
         financial_bytes = build_financial_statements(all_transactions, reconciliation_df, datetime.now())
         d1, d2 = st.columns(2)
@@ -281,6 +324,7 @@ with export_tab:
         d2.download_button("Download Financial Statements (.xlsx)", data=BytesIO(financial_bytes).getvalue(), file_name=f"financial_statements_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 with template_tab:
+    # Template manager lets non-developers register new bank PDF layouts without code changes.
     st.markdown("#### Hybrid System: Template Manager")
     st.markdown(
         '<div class="section-card">Nontechnical onboarding: add a new statement format by keywords + parser style. No code changes needed for most new formats.</div>',
@@ -310,6 +354,7 @@ with template_tab:
     st.markdown("##### Add or Update Template")
     sample_upload = st.file_uploader("Optional: Upload sample statement for preview", type=["pdf"], key="template_sample_upload")
     if sample_upload is not None:
+        # Show raw text extracted from a sample PDF to help pick keywords and parse style.
         st.text_area("Extracted preview text", value=extract_preview_text(sample_upload.getvalue()), height=180)
 
     with st.form("template_form", clear_on_submit=False):
