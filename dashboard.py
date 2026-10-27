@@ -7,13 +7,14 @@ KPIs and the exports always show the same rows.
 
 from __future__ import annotations
 
-import re
 from io import BytesIO
 from typing import Dict, List
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+
+from payees import counterparty
 
 NAVY = "#1D2844"
 BLUE = "#246094"
@@ -41,39 +42,9 @@ def prepare(transactions: pd.DataFrame, category_names: Dict[str, str]) -> pd.Da
     base = df["statement_id"].astype(str).str.split(" · ").str[0]
     acct = df["account_number"].map(lambda a: str(a) if pd.notna(a) and a else "Account")
     df["series"] = acct if base.nunique() == 1 else base + " · " + acct
-    df["payee"] = [payee_name(d, c) for d, c in zip(df["description"], df["txn_category"])]
+    df["payee"] = [counterparty(d, c) for d, c in zip(df["description"], df["txn_category"])]
     df["flagged"] = df["risk_level"].isin(["high", "medium"])
     return df
-
-
-_PAYEE_NOISE = [
-    r"\b(?:share\s+)?dra[fv]?t?\b", r"processed check\s*-?", r"\btype:.*$", r"\bdata:.*$", r"\bwd:\s*",
-    r"\[redacted\]", r"\(amount[^)]*\)", r"ref#?:?\s*\S+", r"pos\s*#\s*\d+", r"atm/pos\s*#?\d*", r"#\s*\d+",
-    r"\b(?:checkcard|debit card|purchase authorized on|card purchase|recurring payment|online banking|des:\S*|id:\S*|indn:\S*|conf#?\s*\S*)\b",
-    r"\b\d{2}/\d{2}(?:/\d{2,4})?\b", r"\b\d{4,}\b", r"\bus\b",
-]
-
-
-def payee_name(description: str, category: str = "") -> str:
-    """A short merchant/payee label from a bank description, for grouping."""
-    text = str(description or "")
-    for pattern in _PAYEE_NOISE:
-        text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
-    words = [w for w in re.split(r"[\s\-*/]+", text) if w.isalpha() and w.lower() not in ("transaction", "check")]
-    # Up to two words, stopping at a lone letter, so "TESORO 62144 511 E FRANCIS" and "TESORO 62144 Q39" both read "Tesoro".
-    kept: List[str] = []
-    for word in words[:4]:
-        if len(word) == 1 or (len(kept) >= 2 and kept[-1].lower() not in ("to", "from")):
-            break
-        kept.append(word)
-    name = " ".join(kept).title()
-    if category == "fee_charge":
-        return "Fees"
-    if category == "atm_withdrawal":
-        return "ATM / cash withdrawals"
-    if not name:
-        return "Checks (payee not shown)" if category == "check" else "Unlabelled"
-    return name
 
 
 def _style(fig: go.Figure, height: int = 340) -> go.Figure:

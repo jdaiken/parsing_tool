@@ -6,6 +6,8 @@ Upload one or more statement PDFs and the app:
 - reads the transactions automatically, even from banks it has never seen
 - checks every running balance so you can see whether it read the statement correctly
 - flags transactions worth a closer look (large, round-dollar, duplicates, check gaps, and more)
+- looks for fraud patterns across all the statements together: cash kept under $10,000 (structuring), gambling, gift cards, new payees taking large sums, money in and straight back out, sudden jumps in cash, a draining balance, overdrafts, duplicate payments and card cash advances
+- checks each file for signs it was edited (the **Document Check** tab)
 - runs a bank reconciliation for each account
 - exports a formatted Excel workpaper and summary financial statements
 
@@ -29,6 +31,20 @@ To try the browser version on your own machine, run `python -m http.server` in t
 4. Start the app: `streamlit run app.py`
 
 It opens at http://localhost:8501. `.streamlit/config.toml` keeps it private: only this computer can open it, and no usage statistics are sent.
+
+## Spotting doctored statements
+
+The **Document Check** tab looks at each file for the traces an edited statement usually leaves:
+
+- the PDF was made or re-saved with an editing tool (iLovePDF, Smallpdf, Word, Canva and others), or saved again long after it was created;
+- a few transaction lines use a different font from the rest;
+- transactions dated outside the statement period, or out of date order;
+- a line that says money came in ("payment from") while the balance went down;
+- running balances that don't follow from the line before;
+- summary totals that don't agree with the transactions;
+- an amount formatted differently from the rest (for example no thousands comma).
+
+A warning is a reason to get the statement directly from the bank; a clean result doesn't prove a statement is genuine. On a scanned copy the file details and fonts can't be checked, so fewer checks run. Day-first dates (31/01) aren't fully supported yet, so the date checks are skipped on those statements.
 
 ## Scanned, redacted and credit card statements
 
@@ -63,7 +79,8 @@ You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** 
 - `Summary`
 - `Transactions`
 - `Risk_Summary`
-- `Flags_For_Review`
+- `Flags_For_Review` (including the fraud patterns found)
+- `Document_Checks`
 - `Raw_Text` (optional)
 
 ## Files
@@ -75,15 +92,23 @@ You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** 
 | `pdf_text.py` | Gets the text out of each PDF page; hides text under black redaction boxes |
 | `ocr.py` | Reads scanned pages on your own computer |
 | `statement_parser.py` | Picks a reader for each statement; built-in bank layouts; risk scoring and flags |
+| `fraud_rules.py` | Fraud patterns across all statements (structuring, gambling, new payees and more) |
+| `authenticity.py` | Document checks for signs a statement was edited |
+| `payees.py` | Short, consistent payee names ("ZELLE PAYMENT TO DANA PRUITT ..." becomes "Dana Pruitt") |
 | `dashboard.py` | Dashboard charts and exports |
 | `bank_directory.py` | Built-in list of banks and card issuers recognized by name |
 | `template_manager.py` | Saves and recognizes the banks you add |
 | `workpaper_export.py`, `financial_statements.py` | Excel exports |
 | `index.html`, `web_app.py` | The in-browser version |
+| `demo/` | A fictional fraud case for demos and teaching, with an answer key |
 
 ## Trying it without a statement
 
-Click **Try it with sample statements** under the upload box. It loads the two sample PDFs in this folder.
+The `demo/` folder holds a fictional elder-financial-exploitation case: three months of checking at a made-up bank, a credit card, a doctored "family copy" of one month, and a scanned, redacted copy. `demo/ANSWER_KEY.md` lists everything planted in it and where the app finds it.
+
+- **Try it with sample statements** (under the upload box) loads the three checking statements and the credit card.
+- **Try a doctored statement** loads a genuine month next to the doctored copy, so the Document Check tab can show the difference.
+- To show OCR, drag `demo/6_checking_2025-05_scanned_redacted.pdf` into the version that runs on your computer.
 
 ## Branding
 

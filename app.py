@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import sys
+from html import escape
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
@@ -21,6 +22,8 @@ import pandas as pd
 import streamlit as st
 
 import dashboard
+import fraud_rules
+from authenticity import WARN, checks_frame, verdict
 from auto_parser import CREDIT_WORDS
 from bank_directory import BANKS, directory_table
 
@@ -50,7 +53,10 @@ LIGHT = "#F3F3F3"  # header bar
 RISK_COLORS = {"High": "#B42318", "Medium": "#D97706", "Low": "#15803D"}
 
 APP_DIR = Path(__file__).resolve().parent
-SAMPLE_FILES = ["Sample-Statement.pdf", "statement_sample1.pdf"]
+# The fictional demo case in demo/ (see demo/ANSWER_KEY.md): three months of checking and a credit card,
+# and separately a doctored "family copy" of April next to the genuine April statement.
+SAMPLE_CASE = ["demo/1_checking_2025-03.pdf", "demo/2_checking_2025-04.pdf", "demo/3_checking_2025-05.pdf", "demo/4_credit_card_2025-05.pdf"]
+SAMPLE_DOCTORED = ["demo/2_checking_2025-04.pdf", "demo/5_checking_2025-04_family_copy.pdf"]
 
 st.set_page_config(page_title=APP_NAME, page_icon=":material/account_balance:", layout="wide")
 
@@ -146,6 +152,23 @@ st.markdown(
     .recon-math {{display: grid; grid-template-columns: 1fr auto; row-gap: 0.25rem; max-width: 420px;
                   font-size: 0.9rem; color: #374151; font-variant-numeric: tabular-nums;}}
     .recon-math .total {{border-top: 1px solid #D1D5DB; padding-top: 0.25rem; font-weight: 600; color: #111827;}}
+    .findings {{display: grid; gap: 0.6rem; margin-bottom: 1rem;}}
+    .finding {{background: #FFFFFF; border: 1px solid #E3E7EE; border-left: 4px solid #D97706; border-radius: 12px; padding: 0.75rem 1rem;}}
+    .finding.high {{border-left-color: #B42318;}}
+    .finding.low {{border-left-color: #15803D;}}
+    .finding-head {{display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;}}
+    .finding-head .title {{font-weight: 600; color: {NAVY};}}
+    .finding-head .acct {{margin-left: auto; font-size: 0.78rem; color: #6B7280;}}
+    .finding p {{margin: 0.35rem 0 0; font-size: 0.88rem; color: #374151;}}
+    .doc-intro {{font-size: 0.92rem; color: #374151; max-width: 860px;}}
+    .doc-row {{display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.75rem; padding: 0.55rem 0; border-top: 1px solid #EEF1F5;}}
+    .doc-row .status {{justify-self: start; align-self: start;}}
+    .doc-name {{font-weight: 600; color: #1F2937; font-size: 0.9rem;}}
+    .doc-detail {{font-size: 0.86rem; color: #4B5563;}}
+    .doc-example {{font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; color: #7C2D12;
+        background: #FFF7ED; border-radius: 6px; padding: 0.15rem 0.45rem; margin-top: 0.25rem;}}
+    .status.muted {{background: #F3F4F6; color: #6B7280;}}
+    .doc-warn {{color: #B42318;}}
     .recon-note {{font-size: 0.82rem; color: #6B7280; margin-top: 0.5rem;}}
 
     .download-card {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1.1rem 1.15rem; min-height: 150px;}}
@@ -457,19 +480,23 @@ uploads = st.file_uploader(
     label_visibility="collapsed",
 )
 if uploads:
-    st.session_state["use_samples"] = False
-sample_col, clear_col, _ = st.columns([1.6, 1, 2.4])
-available_samples = [name for name in SAMPLE_FILES if (APP_DIR / name).exists()]
-if not uploads and available_samples:
-    if sample_col.button("Try it with sample statements", icon=":material/description:"):
-        st.session_state["use_samples"] = True
+    st.session_state["use_samples"] = None
+SAMPLE_SETS = {"case": SAMPLE_CASE, "doctored": SAMPLE_DOCTORED}
+sample_col, doctored_col, clear_col, _ = st.columns([1.6, 1.6, 1, 1.4])
+if not uploads and all((APP_DIR / name).exists() for name in SAMPLE_CASE + SAMPLE_DOCTORED):
+    if sample_col.button("Try it with sample statements", icon=":material/description:", help="A fictional elder-fraud case: 3 months of checking and a credit card"):
+        st.session_state["use_samples"] = "case"
+    if doctored_col.button("Try a doctored statement", icon=":material/policy:", help="A genuine statement next to an edited copy of it"):
+        st.session_state["use_samples"] = "doctored"
     if st.session_state.get("use_samples") and clear_col.button("Clear samples"):
-        st.session_state["use_samples"] = False
+        st.session_state["use_samples"] = None
         st.rerun()
 
 statement_files = list(uploads or [])
-if not statement_files and st.session_state.get("use_samples"):
-    statement_files = [_BundledFile(name, (APP_DIR / name).read_bytes()) for name in available_samples]
+if not statement_files and st.session_state.get("use_samples") in SAMPLE_SETS:
+    statement_files = [
+        _BundledFile(Path(name).name, (APP_DIR / name).read_bytes()) for name in SAMPLE_SETS[st.session_state["use_samples"]]
+    ]
 has_uploads = bool(statement_files)
 
 # Empty DataFrame schemas used before any files are parsed.
@@ -502,6 +529,8 @@ tx_columns = [
     "control_credit_count",
     "control_debit_total",
     "control_debit_count",
+    "section",
+    "balance_check",
 ]
 flag_columns = ["flag_type", "severity", "message", "txn_date", "amount", "description", "check_number"]
 
@@ -509,6 +538,8 @@ all_transactions = pd.DataFrame(columns=tx_columns)
 all_flags = pd.DataFrame(columns=flag_columns)
 all_raw = pd.DataFrame(columns=["statement_id", "page", "text"])
 results: List[ParseResult] = []
+file_names: List[str] = []
+findings: List[fraud_rules.Finding] = []
 
 if has_uploads:
     file_rows: List[str] = []
@@ -521,6 +552,8 @@ if has_uploads:
             file_rows.append(f'<div class="file-row"><span class="status bad">Error</span>{statement_file.name}<span class="meta">{exc}</span></div>')
             continue
         results.append(result)
+        file_names.append(statement_file.name)
+        doc_level, doc_headline = verdict(result.document_checks)
         # Tell the user, file by file, how each statement was read.
         if result.transactions.empty:
             if any("couldn't be read" in n for n in result.notes):
@@ -544,6 +577,8 @@ if has_uploads:
             statements = result.transactions["statement_id"].nunique()
             found = f"{statements} statements · " if statements > 1 else ""
             remarks = "".join(f" · {note}" for note in result.notes if "black boxes" not in note.lower())
+            if doc_level != "clean":
+                remarks += f' · <b class="doc-warn">{doc_headline}: see Document Check</b>'
             file_rows.append(
                 f'<div class="file-row"><span class="status ok">Read</span>{statement_file.name}'
                 f'<span class="meta">{found}{len(result.transactions)} transactions · {layout}{remarks}</span></div>'
@@ -558,6 +593,13 @@ if has_uploads:
         all_transactions = pd.concat([r.transactions for r in results], ignore_index=True)
         all_flags = pd.concat([r.flags for r in results], ignore_index=True)
         all_raw = pd.concat([r.raw_text for r in results], ignore_index=True)
+        # Fraud patterns are looked for across all statements together (a new payee only shows up
+        # against earlier months); they raise the risk of the transactions involved.
+        all_transactions, findings, pattern_flags = fraud_rules.apply(all_transactions)
+        all_flags = pd.concat([pattern_flags, all_flags], ignore_index=True)
+document_checks = pd.concat(
+    [checks_frame(name, r.document_checks) for name, r in zip(file_names, results)] or [checks_frame("", [])], ignore_index=True
+)
 
 # --- Aggregate metrics shared across dashboard tabs ---
 
@@ -577,8 +619,8 @@ EMPTY_NOTE = "Upload a statement above, or click **Try it with sample statements
 # --- Main tabbed UI ---
 
 st.markdown('<div style="height:0.6rem"></div>', unsafe_allow_html=True)
-overview_tab, dashboard_tab, transactions_tab, risk_tab, reconciliation_tab, export_tab, template_tab = st.tabs(
-    ["Summary", "Dashboard", "Transactions", "Red Flags", "Bank Reconciliation", "Download Workpapers", "Add a New Bank"]
+overview_tab, dashboard_tab, transactions_tab, risk_tab, document_tab, reconciliation_tab, export_tab, template_tab = st.tabs(
+    ["Summary", "Dashboard", "Transactions", "Red Flags", "Document Check", "Bank Reconciliation", "Download Workpapers", "Add a New Bank"]
 )
 
 
@@ -600,7 +642,7 @@ with overview_tab:
             + _feature("M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", "Checks the math",
                        "Each account is reconciled against the statement's own balances or printed totals, so you can see if anything was misread.")
             + _feature("M4 21V4M4 4h12l-2 4 2 4H4", "Spots red flags",
-                       "Large, round-dollar, duplicate and out-of-sequence items are flagged for a closer look.")
+                       "Fraud patterns such as structuring, gambling, new payees and a draining balance are flagged, and each file is checked for signs of editing.")
             + _feature("M12 3v12M7 10l5 5 5-5M5 21h14", "Exports workpapers",
                        "Download a formatted Excel workpaper and summary financial statements for the case file.")
             + "</div>",
@@ -801,6 +843,16 @@ with risk_tab:
                 ("Flags raised", f"{flag_count}", "Duplicates, gaps, large items and more", ""),
             ]
         )
+        if findings:
+            _section("Fraud patterns found", "Patterns investigators look for, across all the statements uploaded. Each is a reason to look closer, not proof of fraud.")
+            cards = []
+            for finding in findings:
+                cards.append(
+                    f'<div class="finding {finding.severity}"><div class="finding-head"><span class="status {"bad" if finding.severity == "high" else "warn" if finding.severity == "medium" else "ok"}">'
+                    f'{finding.severity.title()}</span><span class="title">{escape(finding.title)}</span>'
+                    f'<span class="acct">Account {escape(str(finding.account))}</span></div><p>{escape(finding.detail)}</p></div>'
+                )
+            st.markdown('<div class="findings">' + "".join(cards) + "</div>", unsafe_allow_html=True)
         _section("Highest-risk transactions", "Sorted by risk score; the reasons column explains each score")
         high_risk = all_transactions[all_transactions["risk_level"].isin(["high", "medium"])].sort_values("risk_score", ascending=False).copy()
         high_risk["risk_badge"] = high_risk["risk_level"].map(_risk_badge)
@@ -833,6 +885,33 @@ with risk_tab:
                 },
                 width="stretch",
                 hide_index=True,
+            )
+
+with document_tab:
+    if not results:
+        st.info(EMPTY_NOTE)
+    else:
+        st.markdown(
+            '<p class="doc-intro">Edited statements tend to leave the same traces: the file was re-saved by a PDF editor, '
+            "a few lines are in a different font, balances don't add up, dates are out of place. Each file is checked for them "
+            "below. A warning is a reason to get the statement <b>directly from the bank</b>; a clean result doesn't prove a "
+            "statement is genuine.</p>",
+            unsafe_allow_html=True,
+        )
+        icons = {"ok": ("ok", "Looks normal"), "warn": ("bad", "Worth checking"), "note": ("warn", "Note"), "skipped": ("muted", "Not checked")}
+        for name, result in zip(file_names, results):
+            level, headline = verdict(result.document_checks)
+            rows = "".join(
+                f'<div class="doc-row"><span class="status {icons[c.status][0]}">{icons[c.status][1]}</span>'
+                f'<div><div class="doc-name">{escape(c.name)}</div><div class="doc-detail">{escape(c.detail)}</div>'
+                + ("".join(f'<div class="doc-example">{escape(e)}</div>' for e in c.examples) if c.status == WARN or c.examples else "")
+                + "</div></div>"
+                for c in result.document_checks
+            )
+            st.markdown(
+                f'<div class="recon-card doc-card {level}"><div class="recon-head"><span class="title">{escape(name)}</span>'
+                f'<span class="status {"ok" if level == "clean" else "warn" if level == "review" else "bad"}">{headline}</span></div>{rows}</div>',
+                unsafe_allow_html=True,
             )
 
 with reconciliation_tab:
@@ -887,7 +966,7 @@ with export_tab:
         st.info(EMPTY_NOTE)
     else:
         # Build Excel byte streams for forensic workpaper and summarized financial statements.
-        workpaper_bytes = build_workpaper(all_transactions, all_flags, all_raw if include_raw_text else pd.DataFrame(), datetime.now())
+        workpaper_bytes = build_workpaper(all_transactions, all_flags, all_raw if include_raw_text else pd.DataFrame(), datetime.now(), document_checks)
         financial_bytes = build_financial_statements(all_transactions, reconciliation_df, datetime.now())
         d1, d2 = st.columns(2)
         with d1:

@@ -14,6 +14,7 @@ from auto_parser import (
     suggest_detection_keywords,
     summary_balances,
 )
+from authenticity import check_document
 from pdf_text import extract_pdf
 from template_manager import detect_template, load_templates
 
@@ -39,6 +40,7 @@ class ParseResult:
     flags: pd.DataFrame
     raw_text: pd.DataFrame
     notes: List[str] = field(default_factory=list)  # Plain-English remarks shown next to the file name.
+    document_checks: List = field(default_factory=list)  # authenticity.Check results for the file
 
 
 def _to_amount(text: str) -> Optional[float]:
@@ -497,7 +499,8 @@ def _build_flags(df: pd.DataFrame, large_txn_threshold: float) -> pd.DataFrame:
             }
         )
 
-    rounded = df[df["amount"].fillna(0).apply(lambda x: float(x).is_integer())]
+    # Small round amounts ($20 at an ATM) are everyday; only larger ones are worth a flag.
+    rounded = df[(df["amount"].fillna(0) >= 500) & df["amount"].fillna(0).apply(lambda x: float(x).is_integer())]
     for _, row in rounded.iterrows():
         flags.append(
             {
@@ -697,6 +700,8 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
         "control_credit_count",
         "control_debit_total",
         "control_debit_count",
+        "section",
+        "balance_check",
     ]
     transactions = pd.DataFrame(rows, columns=tx_columns)
     # Statement-level facts on every row, so the reconciliation can use the printed summary balances.
@@ -757,4 +762,8 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
             f"Black boxes on {extracted.hidden_lines} line{'s' if extracted.hidden_lines != 1 else ''} still had readable text "
             "underneath. The app hid it, but the PDF itself still contains it: don't share this file as redacted."
         )
-    return ParseResult(transactions=transactions, flags=flags, raw_text=raw_text, notes=notes)
+    try:
+        document_checks = check_document(file_bytes, transactions, full_text, extracted.ocr_pages)
+    except Exception:  # the checks are advisory; never let them stop a statement from loading
+        document_checks = []
+    return ParseResult(transactions=transactions, flags=flags, raw_text=raw_text, notes=notes, document_checks=document_checks)

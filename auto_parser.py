@@ -668,6 +668,7 @@ def auto_parse(
         running_balance: Optional[float] = None
         direction: Optional[str] = None
         checked = False
+        broken = False  # a printed balance that no reading of the amounts explains
         note = ""
 
         amounts = cand.amounts
@@ -708,7 +709,11 @@ def auto_parse(
                     if solved:
                         amount, direction = solved
                         checked = True
+                    else:
+                        broken = True
                 if checked:
+                    for earlier_row, _ in earlier:
+                        earlier_row["balance_check"] = "ok"
                     verified += len(earlier)
                     verified_by_account[acct] = verified_by_account.get(acct, 0) + len(earlier)
                     balance_rows += len(earlier)
@@ -755,6 +760,8 @@ def auto_parse(
                 "source_page": cand.page,
                 "source_line": cand.line_no,
                 "redacted": cand.redacted,
+                "section": cand.section,
+                "balance_check": "ok" if checked else "break" if broken else None,
             }
         )
         if has_balance_column and running_balance is None and amount is not None and not cand.is_check:

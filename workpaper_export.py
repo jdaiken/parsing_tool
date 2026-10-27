@@ -39,6 +39,7 @@ def build_workpaper(
     flags: pd.DataFrame,
     raw_text: pd.DataFrame,
     parsed_at: datetime,
+    document_checks: pd.DataFrame | None = None,
 ) -> bytes:
     output = BytesIO()
     risk_counts = (
@@ -90,6 +91,9 @@ def build_workpaper(
             risk_summary.to_excel(writer, sheet_name="Risk_Summary", index=False)
 
         flags.to_excel(writer, sheet_name="Flags_For_Review", index=False)
+
+        if document_checks is not None and not document_checks.empty:
+            document_checks.to_excel(writer, sheet_name="Document_Checks", index=False)
 
         if not raw_text.empty:
             raw_text.to_excel(writer, sheet_name="Raw_Text", index=False)
