@@ -23,6 +23,12 @@ To try the browser version on your own machine, run `python -m http.server` in t
 
 ## Option 2: Run it on your computer
 
+**Easiest:** install [Python](https://www.python.org/downloads/) (3.10 or newer; on Windows tick "Add python.exe to PATH"), then double-click `start.bat` (Windows) or run `./start.sh` (Mac/Linux). The first start installs what the app needs; after that it starts straight away.
+
+**In VS Code:** in the app's sidebar, click **Open in VS Code** (copies the app from GitHub; needs VS Code and Git) or **Download the app (.zip)** and open the unzipped folder with **File → Open Folder**. Then choose **Terminal → Run Task → Start the app**. Once it has been set up, **Run → Start Debugging** (F5) also starts it, so you can set breakpoints.
+
+**By hand:**
+
 1. Install Python 3.10 or newer.
 2. In this folder, create and activate a virtual environment:
    - Windows: `python -m venv .venv` then `.venv\Scripts\activate`
@@ -31,6 +37,23 @@ To try the browser version on your own machine, run `python -m http.server` in t
 4. Start the app: `streamlit run app.py`
 
 It opens at http://localhost:8501. `.streamlit/config.toml` keeps it private: only this computer can open it, and no usage statistics are sent.
+
+## Projects
+
+A project keeps one case's statements and your notes together. Create one in the sidebar (**New project**). While it is open:
+
+- statements you upload are saved in the project, and every statement in it is analyzed together;
+- the **Project** tab holds your case notes and a note for each statement, and lets you remove a statement;
+- the Transactions tab has a **Note** column for notes on single transactions;
+- notes go into the Excel workpaper (a `Case_Notes` sheet and a Note column) and the dashboard exports.
+
+**Download project (.zip)** saves the statements and all the notes in one file; **Open a project file** in the sidebar opens it again, on this computer or another.
+
+Where projects are kept:
+
+- **On your computer:** in the `projects` folder next to the app. It is listed in `.gitignore`, so case files are never committed to git.
+- **In-browser version:** in that browser's storage, on that computer only.
+- **A hosted copy** (such as Streamlit Community Cloud): only until the tab is closed, because the server is shared. Download the project to keep it. For confidential statements, use one of the versions above.
 
 ## Spotting doctored statements
 
@@ -98,6 +121,8 @@ You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** 
 | `dashboard.py` | Dashboard charts and exports |
 | `bank_directory.py` | Built-in list of banks and card issuers recognized by name |
 | `template_manager.py` | Saves and recognizes the banks you add |
+| `projects.py` | Project folders: statements and notes for a case |
+| `start.bat`, `start.sh`, `.vscode/` | One-click start, and VS Code run and debug settings |
 | `workpaper_export.py`, `financial_statements.py` | Excel exports |
 | `index.html`, `web_app.py` | The in-browser version |
 | `demo/` | A fictional fraud case for demos and teaching, with an answer key |

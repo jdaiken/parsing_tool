@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+.venv/
+.venv-installed
+# Case files and notes: confidential, never commit them.
+projects/
+statement_templates.json

@@ -45,6 +45,7 @@
         "fraud_rules.py",
         "ocr.py",
         "payees.py",
+        "projects.py",
         "pdf_text.py",
         "statement_parser.py",
         "template_manager.py",
@@ -57,7 +58,14 @@
         "demo/5_checking_2025-04_family_copy.pdf",
       ];
       // Included only if present, so adding a logo needs no change here.
-      const optionalFiles = ["assets/logo.svg", "assets/logo.png", "assets/logo.jpg"];
+      // Optional files, included only if present (a logo; files for "Download the app"; GitHub Pages
+      // serves the dot-folders only because of .nojekyll).
+      const optionalFiles = [
+        "assets/logo.svg", "assets/logo.png", "assets/logo.jpg",
+        "requirements.txt", "README.md", "index.html", ".gitignore", ".nojekyll", "start.bat", "start.sh",
+        ".streamlit/config.toml", ".vscode/launch.json", ".vscode/tasks.json", ".vscode/extensions.json",
+        "demo/ANSWER_KEY.md", "demo/make_demo_case.py", "demo/6_checking_2025-05_scanned_redacted.pdf",
+      ];
       for (const name of optionalFiles) {
         try {
           if ((await fetch(`./${name}`, { method: "HEAD" })).ok) sourceFiles.push(name);
@@ -69,9 +77,12 @@
           entrypoint: "web_app.py",
           requirements: ["pandas", "openpyxl", "pdfminer.six==20260107", "plotly"],
           files: Object.fromEntries(sourceFiles.map((name) => [name, { url: `./${name}` }])),
-          // Saved templates live in browser storage so they survive a reload.
+          // Saved banks and projects live in browser storage so they survive a reload.
           idbfsMountpoints: ["/home/pyodide/saved"],
-          env: { STATEMENT_TEMPLATES_PATH: "/home/pyodide/saved/statement_templates.json" },
+          env: {
+            STATEMENT_TEMPLATES_PATH: "/home/pyodide/saved/statement_templates.json",
+            STATEMENT_PROJECTS_PATH: "/home/pyodide/saved/projects",
+          },
           // Same look as .streamlit/config.toml, which the browser version doesn't read.
           streamlitConfig: {
             "client.toolbarMode": "minimal",

@@ -8,8 +8,11 @@ dashboards, export Excel workpapers, and manage custom bank-format templates.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import sys
+import tempfile
+import zipfile
 from html import escape
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,6 +26,7 @@ import streamlit as st
 
 import dashboard
 import fraud_rules
+import projects
 from authenticity import WARN, checks_frame, verdict
 from auto_parser import CREDIT_WORDS
 from bank_directory import BANKS, directory_table
@@ -53,6 +57,17 @@ LIGHT = "#F3F3F3"  # header bar
 RISK_COLORS = {"High": "#B42318", "Medium": "#D97706", "Low": "#15803D"}
 
 APP_DIR = Path(__file__).resolve().parent
+REPO_URL = "https://github.com/jdaiken/parsing_tool"
+# Opens VS Code and offers to clone the repository (needs VS Code installed).
+VSCODE_CLONE_URL = "vscode://vscode.git/clone?url=https%3A%2F%2Fgithub.com%2Fjdaiken%2Fparsing_tool.git"
+# Streamlit Community Cloud runs apps from /mount/src. Its disk is shared by every visitor, so
+# projects there are kept per browser session only, and users are told to download them.
+HOSTED = str(APP_DIR).startswith("/mount/src")
+# Files that make up the app, for "Download the app"; never projects/ or saved banks.
+APP_FILE_PATTERNS = [
+    "*.py", "*.pdf", "requirements.txt", "README.md", "index.html", ".gitignore", ".nojekyll", "start.bat", "start.sh",
+    ".streamlit/config.toml", ".vscode/*.json", "assets/*", "demo/*",
+]
 # The fictional demo case in demo/ (see demo/ANSWER_KEY.md): three months of checking and a credit card,
 # and separately a doctored "family copy" of April next to the genuine April statement.
 SAMPLE_CASE = ["demo/1_checking_2025-03.pdf", "demo/2_checking_2025-04.pdf", "demo/3_checking_2025-05.pdf", "demo/4_credit_card_2025-05.pdf"]
@@ -96,8 +111,6 @@ st.markdown(
     .brand-logo {{height: 64px; width: auto; flex: none; display: block; object-fit: contain;}}
     .brand-mark {{width: 52px; height: 52px; flex: none; border-radius: 50%; background: {NAVY};
                   display: flex; align-items: center; justify-content: center;}}
-    .brand-nav {{font-family: 'Jost', system-ui, sans-serif; font-weight: 300; font-size: 1.05rem; color: #404040;
-                 letter-spacing: 0.01em; text-align: right;}}
     .brand-band {{position: relative; overflow: hidden; background: linear-gradient(100deg, #8A877A 0%, {TAUPE} 55%, #9C998D 100%);
                   color: #FFFFFF; padding: 1.6rem 1.8rem 1.5rem 1.8rem;}}
     .brand-band::after {{content: ""; position: absolute; right: -40px; top: -60px; width: 260px; height: 260px;
@@ -169,6 +182,11 @@ st.markdown(
         background: #FFF7ED; border-radius: 6px; padding: 0.15rem 0.45rem; margin-top: 0.25rem;}}
     .status.muted {{background: #F3F4F6; color: #6B7280;}}
     .doc-warn {{color: #B42318;}}
+    .project-head {{background: #FFFFFF; border: 1px solid #E3E7EE; border-left: 4px solid {BLUE}; border-radius: 12px; padding: 0.8rem 1.1rem; margin-bottom: 0.6rem;}}
+    .project-head .project-name {{color: {NAVY}; font-size: 1.3rem; font-weight: 600;}}
+    .project-head p {{margin: 0.2rem 0; color: #374151; font-size: 0.9rem;}}
+    .project-head span {{font-size: 0.78rem; color: #6B7280;}}
+    .side-note {{font-size: 0.85rem; color: #4B5563; margin-bottom: 0.4rem;}}
     .recon-note {{font-size: 0.82rem; color: #6B7280; margin-top: 0.5rem;}}
 
     .download-card {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1.1rem 1.15rem; min-height: 150px;}}
@@ -209,7 +227,6 @@ st.markdown(
     <div class="brand">
       <div class="brand-top">
         {_logo_html()}
-        <div class="brand-nav">Forensic accounting education</div>
       </div>
       <div class="brand-band">
         <div class="brand-name">{APP_NAME}</div>
@@ -453,7 +470,68 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
 
 # --- Sidebar: global options that affect parsing and export ---
 
+if HOSTED:
+    PROJECTS_BASE = Path(st.session_state.setdefault("projects_dir", tempfile.mkdtemp(prefix="projects-")))
+else:
+    PROJECTS_BASE = projects.PROJECTS_DIR
+
+
+@st.cache_data(show_spinner=False)
+def _app_zip(stamp: tuple) -> bytes:
+    """The app's own files as a .zip, to open in VS Code. `stamp` changes when a file does."""
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path, _ in stamp:
+            zf.write(APP_DIR / path, f"bank-statement-analyzer/{path}")
+    return buffer.getvalue()
+
+
+def _app_files() -> tuple:
+    found = {p for pattern in APP_FILE_PATTERNS for p in APP_DIR.glob(pattern) if p.is_file() and "__pycache__" not in p.parts}
+    return tuple(sorted((p.relative_to(APP_DIR).as_posix(), p.stat().st_mtime) for p in found))
+
+
+# A project picked in a form is applied before the picker is drawn on the next run.
+if "open_project" in st.session_state:
+    st.session_state["project"] = st.session_state.pop("open_project")
+project_list = projects.list_projects(PROJECTS_BASE)
+project_names = {p["slug"]: p["name"] for p in project_list}
+if st.session_state.get("project") not in project_names:
+    st.session_state["project"] = ""
+
 with st.sidebar:
+    st.markdown("#### Project")
+    st.selectbox(
+        "Open a project",
+        [""] + list(project_names),
+        format_func=lambda slug: project_names.get(slug, "No project (quick look)"),
+        key="project",
+        help="A project keeps a case's statements and your notes together.",
+    )
+    with st.expander("New project", icon=":material/create_new_folder:"):
+        with st.form("new_project", clear_on_submit=True, border=False):
+            new_name = st.text_input("Project name", placeholder="Hartwell estate review")
+            new_description = st.text_area("Description (optional)", height=80)
+            if st.form_submit_button("Create project", type="primary"):
+                try:
+                    st.session_state["open_project"] = projects.create_project(new_name, new_description, PROJECTS_BASE)
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+    with st.expander("Open a project file (.zip)", icon=":material/folder_open:"):
+        project_zip = st.file_uploader("Project file", type=["zip"], label_visibility="collapsed")
+        if project_zip is not None and st.button("Open this project"):
+            try:
+                st.session_state["open_project"] = projects.import_zip(project_zip.getvalue(), PROJECTS_BASE)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+    if HOSTED:
+        st.caption(
+            "On this hosted version, projects last until you close the tab. Download a project (Project tab) "
+            "to keep it, or run the app on your computer, where projects are saved in its projects folder."
+        )
+
     st.markdown("#### How it works")
     st.markdown(
         '<ol class="steps"><li>Upload bank statement PDFs</li><li>Review transactions, red flags and the bank reconciliation</li>'
@@ -467,23 +545,61 @@ with st.sidebar:
     include_raw_text = st.checkbox("Include full statement text in the workpaper", value=False)
     st.caption(f"Banks you've added: {len(load_templates())}")
 
+    st.markdown("#### Work on it in VS Code")
+    st.markdown(
+        '<p class="side-note">Get your own copy of the app to run, or change, on your computer. Run locally, '
+        "statements never leave your machine.</p>",
+        unsafe_allow_html=True,
+    )
+    st.link_button("Open in VS Code", VSCODE_CLONE_URL, icon=":material/code:", width="stretch",
+                   help="Opens VS Code and copies the app from GitHub. Needs VS Code and Git installed.")
+    st.download_button("Download the app (.zip)", data=_app_zip(_app_files()), file_name="bank-statement-analyzer.zip",
+                       mime="application/zip", icon=":material/download:", width="stretch")
+    with st.expander("Then what?"):
+        st.markdown(
+            "1. Install [Python](https://www.python.org/downloads/) and [VS Code](https://code.visualstudio.com/).\n"
+            "2. Unzip the download. In VS Code choose **File → Open Folder** and pick the folder.\n"
+            "3. Choose **Terminal → Run Task → Start the app**. The first start installs what the app needs "
+            "(a few minutes); then it opens in your browser.\n\n"
+            f"Without VS Code: double-click `start.bat` (Windows) or run `./start.sh` (Mac/Linux). The code is also on [GitHub]({REPO_URL})."
+        )
+
 # --- File upload and parsing ---
 
-_section(
-    "Upload statements",
-    "Drop in one or more statement PDFs: downloaded from online banking, scanned, or redacted. Scans take a few seconds per page.",
-)
+current_project = projects.load_project(st.session_state["project"], PROJECTS_BASE) if st.session_state["project"] else None
+if current_project:
+    _section(
+        f"Statements in {current_project['name']}",
+        "Statements you add are saved in this project. Notes, and removing a statement, are on the Project tab.",
+    )
+else:
+    _section(
+        "Upload statements",
+        "Drop in one or more statement PDFs: downloaded from online banking, scanned, or redacted. Scans take a few seconds per page.",
+    )
 uploads = st.file_uploader(
     "Upload bank statement PDFs",
     type=["pdf"],
     accept_multiple_files=True,
     label_visibility="collapsed",
+    key=f"uploads_{st.session_state['project']}",
 )
+if current_project:
+    # Each upload is copied into the project once (so removing it later doesn't bring it back).
+    seen = st.session_state.setdefault("saved_uploads", set())
+    fresh = [u for u in uploads or [] if (current_project["slug"], u.file_id) not in seen]
+    if fresh:
+        added = projects.add_files(current_project["slug"], [(u.name, u.getvalue()) for u in fresh], PROJECTS_BASE)
+        seen.update((current_project["slug"], u.file_id) for u in fresh)
+        if added:
+            st.toast(f"Saved to {current_project['name']}: {', '.join(added)}", icon=":material/folder:")
+        current_project = projects.load_project(current_project["slug"], PROJECTS_BASE)
+    uploads = []
 if uploads:
     st.session_state["use_samples"] = None
 SAMPLE_SETS = {"case": SAMPLE_CASE, "doctored": SAMPLE_DOCTORED}
 sample_col, doctored_col, clear_col, _ = st.columns([1.6, 1.6, 1, 1.4])
-if not uploads and all((APP_DIR / name).exists() for name in SAMPLE_CASE + SAMPLE_DOCTORED):
+if not uploads and not current_project and all((APP_DIR / name).exists() for name in SAMPLE_CASE + SAMPLE_DOCTORED):
     if sample_col.button("Try it with sample statements", icon=":material/description:", help="A fictional elder-fraud case: 3 months of checking and a credit card"):
         st.session_state["use_samples"] = "case"
     if doctored_col.button("Try a doctored statement", icon=":material/policy:", help="A genuine statement next to an edited copy of it"):
@@ -493,7 +609,9 @@ if not uploads and all((APP_DIR / name).exists() for name in SAMPLE_CASE + SAMPL
         st.rerun()
 
 statement_files = list(uploads or [])
-if not statement_files and st.session_state.get("use_samples") in SAMPLE_SETS:
+if current_project:
+    statement_files = [_BundledFile(name, data) for name, data in projects.read_files(current_project["slug"], PROJECTS_BASE)]
+elif not statement_files and st.session_state.get("use_samples") in SAMPLE_SETS:
     statement_files = [
         _BundledFile(Path(name).name, (APP_DIR / name).read_bytes()) for name in SAMPLE_SETS[st.session_state["use_samples"]]
     ]
@@ -553,7 +671,7 @@ if has_uploads:
             continue
         results.append(result)
         file_names.append(statement_file.name)
-        doc_level, doc_headline = verdict(result.document_checks)
+        doc_level, doc_headline = verdict(getattr(result, "document_checks", []))
         # Tell the user, file by file, how each statement was read.
         if result.transactions.empty:
             if any("couldn't be read" in n for n in result.notes):
@@ -597,8 +715,15 @@ if has_uploads:
         # against earlier months); they raise the risk of the transactions involved.
         all_transactions, findings, pattern_flags = fraud_rules.apply(all_transactions)
         all_flags = pd.concat([pattern_flags, all_flags], ignore_index=True)
+if current_project:
+    # Notes are keyed by statement and position on the page, so they survive re-reading the files.
+    all_transactions["note_key"] = (
+        all_transactions["statement_id"].astype(str) + "|" + all_transactions["source_page"].astype(str)
+        + "|" + all_transactions["source_line"].astype(str)
+    )
+    all_transactions["note"] = [current_project["txn_notes"].get(key, "") for key in all_transactions["note_key"]]
 document_checks = pd.concat(
-    [checks_frame(name, r.document_checks) for name, r in zip(file_names, results)] or [checks_frame("", [])], ignore_index=True
+    [checks_frame(name, getattr(r, "document_checks", [])) for name, r in zip(file_names, results)] or [checks_frame("", [])], ignore_index=True
 )
 
 # --- Aggregate metrics shared across dashboard tabs ---
@@ -619,9 +744,77 @@ EMPTY_NOTE = "Upload a statement above, or click **Try it with sample statements
 # --- Main tabbed UI ---
 
 st.markdown('<div style="height:0.6rem"></div>', unsafe_allow_html=True)
-overview_tab, dashboard_tab, transactions_tab, risk_tab, document_tab, reconciliation_tab, export_tab, template_tab = st.tabs(
-    ["Summary", "Dashboard", "Transactions", "Red Flags", "Document Check", "Bank Reconciliation", "Download Workpapers", "Add a New Bank"]
+tab_names = ["Summary", "Dashboard", "Transactions", "Red Flags", "Document Check", "Bank Reconciliation", "Download Workpapers", "Add a New Bank"]
+if current_project:
+    tab_names.insert(0, "Project")
+tabs = dict(zip(tab_names, st.tabs(tab_names)))
+overview_tab, dashboard_tab, transactions_tab, risk_tab, document_tab, reconciliation_tab, export_tab, template_tab = (
+    tabs[name] for name in tab_names if name != "Project"
 )
+
+if current_project:
+    with tabs["Project"]:
+        slug = current_project["slug"]
+        st.markdown(
+            f'<div class="project-head"><div class="project-name">{escape(current_project["name"])}</div>'
+            f'<p>{escape(current_project["description"]) or "No description yet."}</p>'
+            f'<span>Created {escape(current_project["created"])} · last saved {escape(current_project["updated"])}'
+            f' · {len(current_project["files"])} statement{"s" if len(current_project["files"]) != 1 else ""}</span></div>',
+            unsafe_allow_html=True,
+        )
+        left, right = st.columns([1.15, 1])
+        with left:
+            _section("Statements", "Add a note to each statement, or tick Remove to take it out of the project")
+            counts = all_transactions.groupby(all_transactions["statement_id"].astype(str).str.split(" · ").str[0]).size() if has_uploads and not all_transactions.empty else pd.Series(dtype=int)
+            file_table = pd.DataFrame(
+                [
+                    {"File": f["name"], "Added": f["added"], "Transactions": int(counts.get(Path(f["name"]).stem, 0)),
+                     "Note": current_project["file_notes"].get(f["name"], ""), "Remove": False}
+                    for f in current_project["files"]
+                ],
+                columns=["File", "Added", "Transactions", "Note", "Remove"],
+            )
+            with st.form(f"files_{slug}", border=False):
+                edited_files = st.data_editor(
+                    file_table,
+                    column_config={"Note": st.column_config.TextColumn("Note", width="large"), "Remove": st.column_config.CheckboxColumn("Remove", width="small")},
+                    disabled=["File", "Added", "Transactions"],
+                    hide_index=True,
+                    width="stretch",
+                )
+                if st.form_submit_button("Save statement notes"):
+                    meta = projects.load_project(slug, PROJECTS_BASE)
+                    meta["file_notes"] = {row["File"]: str(row["Note"] or "") for _, row in edited_files.iterrows() if str(row["Note"] or "").strip()}
+                    projects.save_project(meta, PROJECTS_BASE)
+                    for _, row in edited_files[edited_files["Remove"]].iterrows():
+                        projects.remove_file(slug, row["File"], PROJECTS_BASE)
+                    st.rerun()
+            if not current_project["files"]:
+                st.caption("No statements yet: add them with the upload box above.")
+        with right:
+            _section("Case notes", "Your working notes for this project; saved with it and included in the workpaper")
+            with st.form(f"notes_{slug}", border=False):
+                project_name = st.text_input("Project name", value=current_project["name"])
+                project_description = st.text_area("Description", value=current_project["description"], height=70)
+                case_notes = st.text_area("Notes", value=current_project["notes"], height=260,
+                                          placeholder="Who asked for the review, what you've found, what to request next…")
+                if st.form_submit_button("Save notes", type="primary"):
+                    meta = projects.load_project(slug, PROJECTS_BASE)
+                    meta.update(name=project_name.strip() or meta["name"], description=project_description, notes=case_notes)
+                    projects.save_project(meta, PROJECTS_BASE)
+                    st.rerun()
+        st.caption("Notes on single transactions are on the Transactions tab (the Note column).")
+        d1, d2, _ = st.columns([1.2, 1, 1.8])
+        d1.download_button(
+            "Download project (.zip)", data=projects.export_zip(slug, PROJECTS_BASE), file_name=f"{slug}.zip", mime="application/zip",
+            icon=":material/download:", help="The statements and every note in one file. Open it again from the sidebar.",
+        )
+        with d2.popover("Delete project", icon=":material/delete:"):
+            st.markdown(f"Delete **{escape(current_project['name'])}**, its statements and notes from this app? Download it first if you might need it.")
+            if st.button("Yes, delete it", type="primary"):
+                projects.delete_project(slug, PROJECTS_BASE)
+                st.session_state["open_project"] = ""
+                st.rerun()
 
 
 def _feature(icon_path: str, title: str, text: str) -> str:
@@ -812,25 +1005,45 @@ with transactions_tab:
         filtered = filtered.sort_values(["statement_id", "txn_date", "source_page", "source_line"])
         filtered["txn_category"] = filtered["txn_category"].map(_display_category_name)
         filtered["risk_badge"] = filtered["risk_level"].map(_risk_badge)
-        st.caption(f"Showing {len(filtered)} of {tx_count} transactions")
-        st.dataframe(
-            _money_cells(filtered, ["debit", "credit", "running_balance"])[
-                ["txn_date", "statement_id", "description", "txn_category", "debit", "credit", "running_balance", "risk_badge"]
-            ],
-            column_config={
-                "txn_date": DATE_COLUMN,
-                "statement_id": "Statement",
-                "description": st.column_config.TextColumn("Description", width="medium"),
-                "txn_category": "Category",
-                "debit": _money_text_column("Money out"),
-                "credit": _money_text_column("Money in"),
-                "running_balance": _money_text_column("Balance"),
-                "risk_badge": "Risk",
-            },
-            width="stretch",
-            hide_index=True,
-            height=480,
-        )
+        st.caption(f"Showing {len(filtered)} of {tx_count} transactions" + (" · type in the Note column to add a note; it's saved to the project" if current_project else ""))
+        shown_columns = ["txn_date", "statement_id", "description", "txn_category", "debit", "credit", "running_balance", "risk_badge"]
+        column_config = {
+            "txn_date": DATE_COLUMN,
+            "statement_id": "Statement",
+            "description": st.column_config.TextColumn("Description", width="medium"),
+            "txn_category": "Category",
+            "debit": _money_text_column("Money out"),
+            "credit": _money_text_column("Money in"),
+            "running_balance": _money_text_column("Balance"),
+            "risk_badge": "Risk",
+            "note": st.column_config.TextColumn("Note", width="medium"),
+        }
+        table = _money_cells(filtered, ["debit", "credit", "running_balance"])
+        if current_project:
+            # The editor's key changes whenever the notes or filters do, so its edits always line up with the rows shown.
+            notes_version = hashlib.sha1(json.dumps([current_project["txn_notes"], selected_statements, selected_risks, search_term], sort_keys=True).encode()).hexdigest()[:12]
+            edited = st.data_editor(
+                table[shown_columns + ["note", "note_key"]],
+                column_config=column_config,
+                column_order=shown_columns[:3] + ["note"] + shown_columns[3:],
+                disabled=shown_columns + ["note_key"],
+                width="stretch",
+                hide_index=True,
+                height=480,
+                key=f"txn_notes_{current_project['slug']}_{notes_version}",
+            )
+            changed = {k: str(n or "").strip() for k, n in zip(edited["note_key"], edited["note"]) if str(n or "").strip() != current_project["txn_notes"].get(k, "")}
+            if changed:
+                meta = projects.load_project(current_project["slug"], PROJECTS_BASE)
+                for key, note in changed.items():
+                    if note:
+                        meta["txn_notes"][key] = note
+                    else:
+                        meta["txn_notes"].pop(key, None)
+                projects.save_project(meta, PROJECTS_BASE)
+                st.rerun()
+        else:
+            st.dataframe(table[shown_columns], column_config=column_config, width="stretch", hide_index=True, height=480)
 
 with risk_tab:
     if not has_data:
@@ -900,13 +1113,13 @@ with document_tab:
         )
         icons = {"ok": ("ok", "Looks normal"), "warn": ("bad", "Worth checking"), "note": ("warn", "Note"), "skipped": ("muted", "Not checked")}
         for name, result in zip(file_names, results):
-            level, headline = verdict(result.document_checks)
+            level, headline = verdict(getattr(result, "document_checks", []))
             rows = "".join(
                 f'<div class="doc-row"><span class="status {icons[c.status][0]}">{icons[c.status][1]}</span>'
                 f'<div><div class="doc-name">{escape(c.name)}</div><div class="doc-detail">{escape(c.detail)}</div>'
                 + ("".join(f'<div class="doc-example">{escape(e)}</div>' for e in c.examples) if c.status == WARN or c.examples else "")
                 + "</div></div>"
-                for c in result.document_checks
+                for c in getattr(result, "document_checks", [])
             )
             st.markdown(
                 f'<div class="recon-card doc-card {level}"><div class="recon-head"><span class="title">{escape(name)}</span>'
@@ -966,7 +1179,17 @@ with export_tab:
         st.info(EMPTY_NOTE)
     else:
         # Build Excel byte streams for forensic workpaper and summarized financial statements.
-        workpaper_bytes = build_workpaper(all_transactions, all_flags, all_raw if include_raw_text else pd.DataFrame(), datetime.now(), document_checks)
+        case_notes = None
+        if current_project:
+            case_notes = pd.DataFrame(
+                [{"item": "Project", "note": current_project["name"]}, {"item": "Description", "note": current_project["description"]},
+                 {"item": "Case notes", "note": current_project["notes"]}]
+                + [{"item": f"Statement: {name}", "note": note} for name, note in current_project["file_notes"].items()]
+            )
+        workpaper_bytes = build_workpaper(
+            all_transactions.drop(columns=["note_key"], errors="ignore"), all_flags, all_raw if include_raw_text else pd.DataFrame(),
+            datetime.now(), document_checks, case_notes,
+        )
         financial_bytes = build_financial_statements(all_transactions, reconciliation_df, datetime.now())
         d1, d2 = st.columns(2)
         with d1:

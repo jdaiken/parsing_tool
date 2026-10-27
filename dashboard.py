@@ -167,6 +167,8 @@ EXPORT_COLUMNS = {
 
 def export_frame(df: pd.DataFrame) -> pd.DataFrame:
     out = df[list(EXPORT_COLUMNS)].rename(columns=EXPORT_COLUMNS).copy()
+    if "note" in df:
+        out["Note"] = df["note"].values
     out["Date"] = out["Date"].dt.date
     return out.sort_values(["Statement / account", "Date"])
 

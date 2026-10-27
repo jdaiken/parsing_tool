@@ -40,6 +40,7 @@ def build_workpaper(
     raw_text: pd.DataFrame,
     parsed_at: datetime,
     document_checks: pd.DataFrame | None = None,
+    case_notes: pd.DataFrame | None = None,
 ) -> bytes:
     output = BytesIO()
     risk_counts = (
@@ -81,6 +82,9 @@ def build_workpaper(
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         summary.to_excel(writer, sheet_name="Summary", index=False)
+
+        if case_notes is not None and not case_notes.empty:
+            case_notes.to_excel(writer, sheet_name="Case_Notes", index=False)
 
         transactions_out = transactions.copy()
         if not transactions_out.empty:
