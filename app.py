@@ -94,7 +94,8 @@ st.markdown(
         font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;}}
     .stApp a {{color: {BLUE};}}
     .stApp [data-testid="stIconMaterial"] {{font-family: 'Material Symbols Rounded' !important;}}
-    #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], footer {{visibility: hidden; height: 0;}}
+    /* Hide Streamlit's menu and decoration, but not the toolbar itself: it holds the button that reopens the sidebar. */
+    #MainMenu, [data-testid="stToolbarActions"], [data-testid="stDecoration"], footer {{visibility: hidden; height: 0;}}
     /* Streamlit's (hidden) top bar still takes space; start the page below it so the logo is never cut off. */
     header[data-testid="stHeader"] {{background: transparent;}}
     .block-container {{padding-top: 3.2rem; padding-bottom: 2rem; max-width: 1180px;}}
