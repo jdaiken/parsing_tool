@@ -77,7 +77,7 @@ USER_HEADER = os.environ.get("BSA_USER_HEADER", "").strip()
 APP_FILE_PATTERNS = [
     "*.py", "*.pdf", "*.md", "LICENSE", "NOTICE", "requirements.txt", "requirements-lock.txt", "index.html", ".gitignore", ".nojekyll",
     ".dockerignore", "start.bat", "start.sh", ".streamlit/config.toml", ".vscode/*.json", ".github/*.yml",
-    ".github/workflows/*.yml", "assets/*", "assets/fonts/*", "demo/*", "docs/*.md", "deploy/*/*", "tools/*.py", "tests/*.py",
+    ".github/workflows/*.yml", "assets/*", "assets/fonts/*", "demo/*", "docs/*.md", "docs/*.pdf", "docs/guides/*", "docs/guides/img/*", "deploy/*/*", "tools/*.py", "tests/*.py",
 ]
 # The fictional demo case in demo/ (see demo/ANSWER_KEY.md): three months of checking and a credit card,
 # and separately a doctored "family copy" of April next to the genuine April statement.
@@ -266,6 +266,11 @@ st.markdown(
                                           border-bottom: 1px solid {BLUE_LINE}; padding-bottom: 0.35rem; margin-top: 0.6rem;}}
     .app-footer {{margin-top: 3rem; padding: 1rem; border-radius: 12px; background: {NAVY};
                   font-size: 0.8rem; color: #D6DEE8; text-align: center;}}
+    .free-note {{display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin-top: 0.9rem; padding: 0.75rem 1rem;
+                  background: {BLUE_TINT}; border: 1px solid {BLUE_LINE}; border-radius: 12px; font-size: 0.88rem; color: #1F2937;}}
+    .free-copy {{margin-left: auto; color: #4B5563; font-size: 0.82rem; white-space: nowrap;}}
+    .free-badge {{background: {NAVY}; color: #FFFFFF; font-weight: 600; font-size: 0.78rem; letter-spacing: 0.04em;
+                   padding: 0.2rem 0.65rem; border-radius: 999px; white-space: nowrap;}}
     .app-footer a {{color: #FFFFFF !important; text-decoration: none; border-bottom: 1px solid rgba(255,255,255,0.4);}}
     </style>
     """,
@@ -919,6 +924,13 @@ with overview_tab:
             + "</div>",
             unsafe_allow_html=True,
         )
+        st.markdown(
+            '<div class="free-note"><span class="free-badge">Free, always</span>'
+            "<span>Free for universities, students and investigators, for real casework and teaching. Open source under the "
+            '<a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer">Apache License 2.0</a>.</span>'
+            f'<span class="free-copy">© 2026 {ORG_NAME}</span></div>',
+            unsafe_allow_html=True,
+        )
     else:
         # Summary KPI cards: volume, risk, and cash flow totals.
         _kpis(
@@ -1428,6 +1440,7 @@ with template_tab:
                 st.error(msg)
 
 st.markdown(
-    f'<div class="app-footer">{APP_NAME} · <a href="{ORG_URL}" target="_blank" rel="noopener noreferrer">{ORG_NAME}</a></div>',
+    f'<div class="app-footer">{APP_NAME} {APP_VERSION} · <a href="{ORG_URL}" target="_blank" rel="noopener noreferrer">{ORG_NAME}</a>'
+    " · Free and open source (Apache 2.0)</div>",
     unsafe_allow_html=True,
 )

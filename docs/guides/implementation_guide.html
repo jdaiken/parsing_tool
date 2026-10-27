@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bank Statement Analyzer: Implementation Guide</title>
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+
+<section class="cover">
+  <div class="cover-top"><img src="../../assets/logo.png" alt="Justice for Fraud Victims Project"></div>
+  <div class="cover-band">
+    <p class="kicker">Implementation Guide</p>
+    <h1>Bank Statement Analyzer</h1>
+    <p class="subtitle">Hosting the analyzer securely at your university or organization.</p>
+    <div class="meta">
+      <span class="free">Free, always</span><br>
+      For academic leadership, faculty and IT departments<br>
+      Version 1.1 · 2026
+    </div>
+  </div>
+  <div class="cover-foot"><span>Justice for Fraud Victims Project</span><span>justiceforfraudvictimsproject.org</span></div>
+</section>
+
+<section class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>Summary for decision makers <span>3</span></li>
+    <li>Two ways to host it <span>4</span></li>
+    <li>Running a pilot <span>5</span></li>
+    <li>Option 1: Browser version <span>6</span></li>
+    <li>Option 2: Server version <span>7</span></li>
+    <li>How the analyzer protects data <span>9</span></li>
+    <li>Who is responsible for what <span>10</span></li>
+    <li>Approvals, updates and support <span>11</span></li>
+    <li>IT checklist <span>12</span></li>
+  </ol>
+</section>
+
+<h2>1. Summary for decision makers</h2>
+<p class="lead">Bank Statement Analyzer gives forensic accounting students and fraud investigators a professional tool for reading bank statements, reconciling them, spotting fraud patterns and producing workpapers. It is free, it is open source, and it can run on your university's own website.</p>
+
+<div class="grid">
+  <div class="card"><h4>What it does</h4><p>Reads bank and credit card statements from any bank, checks every account against the statement's own balances, flags patterns such as structuring and a draining balance, checks files for signs of editing, and exports Excel workpapers.</p></div>
+  <div class="card"><h4>Who it's for</h4><p>Forensic accounting and fraud examination courses, student clinics working real cases under supervision, and investigators supporting fraud victims.</p></div>
+  <div class="card"><h4>What it costs</h4><p>Nothing. The software and its updates are free under the Apache License 2.0. Your only costs are a small web server and staff time, plus an independent security review if your policies require one.</p></div>
+  <div class="card"><h4>How data is protected</h4><p>In the recommended setup, statements are read inside each person's browser and are never sent to the university's server or anyone else. Case projects are encrypted with a password.</p></div>
+</div>
+
+<div class="callout tip"><span class="label">Recommendation</span>
+<p>Start with <b>Option 1, the browser version</b>, for one course or clinic. The university's server holds no case data, which keeps the security review simple. Add Option 2 later only if users need features it provides.</p></div>
+
+<h3>What we ask of a pilot university</h3>
+<ul>
+  <li>A faculty sponsor with a course or clinic that will use it for one term.</li>
+  <li>An IT contact to host the browser version and handle the university's usual security review.</li>
+  <li>Feedback at the end of the term on what worked and what's missing.</li>
+</ul>
+
+<h2 class="chapter">2. Two ways to host it</h2>
+<table>
+  <tr><th style="width:26%"></th><th>Option 1: Browser version <span style="font-weight:400">(recommended)</span></th><th>Option 2: Server version</th></tr>
+  <tr><td><b>Where statements are read</b></td><td>In each person's web browser. Never uploaded.</td><td>On your server. Uploaded to it.</td></tr>
+  <tr><td><b>Case data on your server</b></td><td class="yes">None</td><td>Yes, in encrypted projects</td></tr>
+  <tr><td><b>What the server does</b></td><td>Delivers the app's files, like any static website</td><td>Runs the app</td></tr>
+  <tr><td><b>Sign-in</b></td><td>Optional (the server holds no data)</td><td>Required, using your university login</td></tr>
+  <tr><td><b>Scanned paper statements</b></td><td>Not yet (users run the computer version for scans)</td><td class="yes">Yes</td></tr>
+  <tr><td><b>Saved projects</b></td><td>Encrypted, in each person's browser; downloadable</td><td>Encrypted, on the server, separate per person</td></tr>
+  <tr><td><b>Server needed</b></td><td>Any web server; about 85 MB of files</td><td>2 CPUs, 4 GB memory, and disk for case data</td></tr>
+  <tr><td><b>Approval effort</b></td><td class="yes">Low: a website that stores nothing</td><td>Higher: a system that stores case data</td></tr>
+</table>
+<p>Both options come with ready-made Docker container images and step-by-step instructions. A third way needs no hosting at all: each investigator runs the analyzer on their own computer, which also reads scanned statements.</p>
+
+<h2 class="chapter">3. Running a pilot</h2>
+<p class="lead">A typical pilot takes about one academic term.</p>
+<table>
+  <tr><th style="width:18%">When</th><th>Steps</th><th style="width:22%">Who</th></tr>
+  <tr><td><b>Weeks 1–2</b></td><td>Agree on the pilot course. IT reviews this guide and the security documentation, and completes any internal security questionnaire (such as HECVAT).</td><td>Faculty sponsor, IT</td></tr>
+  <tr><td><b>Week 3</b></td><td>IT deploys Option 1 on a university web address and runs the checklist in section 9.</td><td>IT</td></tr>
+  <tr><td><b>Week 4</b></td><td>Faculty try it with the built-in demo case and plan the exercises (see the User Guide).</td><td>Faculty</td></tr>
+  <tr><td><b>Weeks 5–14</b></td><td>Students use it in class with the demo case. Clinics may use it on real cases under the handling rules in section 7.</td><td>Faculty, students</td></tr>
+  <tr><td><b>Week 15</b></td><td>Review: usefulness, statements that didn't read correctly, feature requests, any security questions.</td><td>All, with JFVP</td></tr>
+</table>
+<h3>Measures of success</h3>
+<ul class="checklist">
+  <li>Students complete the demo-case exercises and produce workpapers.</li>
+  <li>Real statements used in clinics reconcile, or the variances are understood.</li>
+  <li>No case data leaves approved systems.</li>
+  <li>Faculty want to keep using it in the next term.</li>
+</ul>
+
+<h2 class="chapter">4. Option 1: Browser version</h2>
+<p class="lead">Your server hands out the app's files. Each person's browser runs the app and reads statements on their own computer.</p>
+<p>The page carries a strict security policy: the browser may load from, and connect to, your server only. That applies to the code that reads statements too, so statements cannot be sent anywhere, even by a software bug or a tampered component. In testing, the complete app ran with every outside connection blocked, and a deliberate attempt to contact another website was refused by the browser.</p>
+
+<h3>With Docker</h3>
+<pre>docker run -d --name bank-statement-analyzer -p 8080:8080 --read-only --tmpfs /tmp \
+  --restart unless-stopped ghcr.io/jdaiken/bank-statement-analyzer-browser:&lt;version&gt;</pre>
+<p>Images are published with each release. To build the image yourself from the source code:</p>
+<pre>git clone https://github.com/jdaiken/parsing_tool.git &amp;&amp; cd parsing_tool
+docker build -f deploy/browser/Dockerfile -t bank-statement-analyzer-browser .</pre>
+<p>The container runs the nginx web server as an unprivileged user on a read-only filesystem, accepts only read requests (an upload attempt returns 403), and sends the security headers. Put it behind your HTTPS load balancer or reverse proxy. On a network that inspects HTTPS traffic, pass your organization's certificate to the build: <code>docker build --secret id=ca_bundle,src=ca.pem ...</code> (used during the build only, never stored in the image).</p>
+
+<h3>On an existing web server, without Docker</h3>
+<ol class="steps">
+  <li>Download <b>bank-statement-analyzer-offline-&lt;version&gt;.zip</b> from the project's GitHub Releases page, or build it with <code>python tools/build_offline.py</code>.</li>
+  <li>Check the zip against its published <b>.sha256</b> fingerprint, and the unzipped folder against the <b>SHA256SUMS.txt</b> file inside it.</li>
+  <li>Copy the folder to a site served over HTTPS.</li>
+  <li>Turn on the security headers with the included settings: <b>.htaccess</b> (Apache, needs mod_headers), <b>web.config</b> (IIS) or <b>nginx.conf.example</b>. They also set the right file types (for example, <code>.wasm</code> as <code>application/wasm</code>).</li>
+</ol>
+<div class="callout"><span class="label">What users experience</span>
+<p>The first visit loads about 85 MB from your server, which is then cached. Projects are saved encrypted in that browser; users should download projects they need to keep, because clearing browser data erases them. For scanned statements, users run the computer version.</p></div>
+
+<h2 style="margin-top:0.35in">5. Option 2: Server version</h2>
+<p class="lead">The full app, including reading scanned statements, runs on your server behind your university login. Use it only on a server your institution approves for case data.</p>
+
+<h3>What's included</h3>
+<div class="grid">
+  <div class="card navy"><h4>Sign-in container</h4><p>oauth2-proxy sends people to your identity provider (Microsoft Entra ID, Google Workspace, Okta or any OpenID Connect provider) and tells the app who signed in.</p></div>
+  <div class="card navy"><h4>App container</h4><p>On an internal network with no published port and no internet access, so it can only be reached through sign-in. Unprivileged, read-only, all Linux capabilities dropped. Case data lives in a dedicated volume.</p></div>
+</div>
+
+<h3>Setup</h3>
+<ol class="steps">
+  <li><b>Register the app with your identity provider</b> as an OpenID Connect web application, with the redirect address <code>https://&lt;your-host&gt;/oauth2/callback</code>. Limit who can sign in at the provider.</li>
+  <li><b>Configure</b>: copy <code>deploy/server/.env.example</code> to <code>.env</code> and fill in the issuer address, client ID, client secret, cookie secret, allowed email domains and public address.</li>
+  <li><b>Start</b>:<pre>docker compose -f deploy/server/docker-compose.yml --env-file deploy/server/.env up -d --build</pre></li>
+  <li><b>Put it behind HTTPS</b>: point your reverse proxy at <code>127.0.0.1:4180</code>. It must pass WebSocket connections through.</li>
+  <li><b>Pin the sign-in image</b> to an exact version (a digest) in <code>docker-compose.yml</code>.</li>
+  <li><b>Protect the data</b>: keep the case-data volume on an encrypted disk, include it in backups, and limit who can log in to the server.</li>
+</ol>
+
+<h3>How it keeps people's cases apart</h3>
+<p>Two settings, already in <code>docker-compose.yml</code>, turn on server mode. Set them only on an approved server:</p>
+<ul>
+  <li><code>BSA_APPROVED_SERVER=1</code> removes the "demonstration copy" warning.</li>
+  <li><code>BSA_USER_HEADER=X-Forwarded-Email</code> names the sign-in information the app trusts. The app keeps a separate project folder for each person and refuses to run without sign-in. Never expose the app container directly: that information is trusted only because sign-in is the only way in.</li>
+</ul>
+<div class="callout important"><span class="label">Server administrators</span>
+<p>In this option statements are on your server while they're analyzed, and projects are stored there (encrypted with their owners' passwords). People with administrative access to that server are inside the trust boundary.</p></div>
+
+<h2 style="margin-top:0.35in">6. How the analyzer protects data</h2>
+<table>
+  <tr><th style="width:27%">Protection</th><th>How it works</th></tr>
+  <tr><td><b>Statements stay local</b></td><td>Option 1 and the computer version read statements on the user's computer. The computer version only accepts connections from that computer and sends no usage statistics.</td></tr>
+  <tr><td><b>No outside connections</b></td><td>The browser version's security policy allows connections to its own server only. Fonts and chart code are built in, so no outside service is ever called.</td></tr>
+  <tr><td><b>Encrypted projects</b></td><td>Statements, their file names, notes and the case log are encrypted with AES-256-GCM, with a key derived from the project password using scrypt (an OWASP-recommended setting). Tampering is detected. Lost passwords can't be recovered.</td></tr>
+  <tr><td><b>Encrypted sharing</b></td><td>Projects are shared as encrypted .bsacase files with their own password.</td></tr>
+  <tr><td><b>Evidence integrity</b></td><td>Each statement's SHA-256 fingerprint, the app version, the analyst and the time are recorded in every workpaper. Every transaction names its source file, page and line. Original files are never changed.</td></tr>
+  <tr><td><b>Leaky redactions</b></td><td>Text hidden under black boxes but still in the PDF is detected, hidden, and reported.</td></tr>
+  <tr><td><b>Labelled demo copies</b></td><td>A copy running on a server that isn't approved shows a red warning not to upload real statements.</td></tr>
+  <tr><td><b>Supply chain</b></td><td>Every software component is pinned to an exact version and verified by its fingerprint. Container base images and build automation are pinned to exact digests. Automated tests run on every change, and security updates are proposed weekly.</td></tr>
+</table>
+<p class="small muted">Not covered by the software: workpapers and exports are ordinary Excel, CSV and HTML files (not encrypted); a compromised computer or browser extension can see what's on screen; and a clean document check doesn't prove a statement is genuine.</p>
+
+<h2 class="chapter">7. Who is responsible for what</h2>
+<table>
+  <tr><th style="width:26%">Area</th><th>University IT</th><th>Faculty and supervisors</th><th>Users</th></tr>
+  <tr><td><b>Hosting</b></td><td>Deploy, HTTPS, security headers, updates</td><td>—</td><td>—</td></tr>
+  <tr><td><b>Access</b></td><td>Sign-in and access control (Option 2)</td><td>Decide who works on real cases</td><td>Keep passwords private</td></tr>
+  <tr><td><b>Devices</b></td><td>Encryption and update policies for university devices</td><td>—</td><td>Encrypted device, screen lock, no shared computers</td></tr>
+  <tr><td><b>Case files</b></td><td>Approved storage locations; backups (Option 2)</td><td>Retention schedule; authorization from victims</td><td>Store exports only in approved storage; use case numbers, not names</td></tr>
+  <tr><td><b>Students on real cases</b></td><td>—</td><td>Supervision; confidentiality agreements</td><td>Follow the handling rules in the User Guide</td></tr>
+  <tr><td><b>Incidents</b></td><td>Lead the response</td><td>Report immediately</td><td>Report immediately</td></tr>
+  <tr><td><b>Software releases</b></td><td colspan="3">Published by the project maintainers, with fingerprints, on the project's GitHub page.</td></tr>
+</table>
+<div class="callout"><span class="label">Legal review</span>
+<p>Have your institution's counsel review the data-handling policy for real cases, especially where findings may go to law enforcement or court. State breach-notification laws can apply when names together with account numbers are exposed.</p></div>
+
+<h2 class="chapter">8. Approvals, updates and support</h2>
+<h3>Approvals universities usually need</h3>
+<table>
+  <tr><th style="width:30%">Item</th><th>Status</th></tr>
+  <tr><td><b>License</b></td><td>Apache License 2.0: free to use, copy, modify and host, permanently. © 2026 Justice for Fraud Victims Project.</td></tr>
+  <tr><td><b>Security questionnaire (HECVAT)</b></td><td>Answers can be prepared from the project's security documentation. For Option 1, many items don't apply because no institutional data is stored.</td></tr>
+  <tr><td><b>Independent security review</b></td><td>The code is open source and available for review. Arrange an independent test if your policies require one.</td></tr>
+  <tr><td><b>Accessibility (VPAT)</b></td><td>The app is a standard web page. A formal accessibility review has not yet been completed; ask if your institution requires one.</td></tr>
+  <tr><td><b>Privacy</b></td><td>Option 1 collects no personal data. Option 2 stores the signed-in email address (as a folder fingerprint) and users' encrypted projects.</td></tr>
+</table>
+
+<h3>Updates</h3>
+<p>New versions are published as releases on the project's GitHub page, each with the offline package, its fingerprint, and both container images. To update, pull the new image (or replace the folder) and restart; projects and case data carry over. Watch the repository's releases to be notified.</p>
+
+<h3>Support and security reports</h3>
+<p>Questions and feature requests: through the project's GitHub page or justiceforfraudvictimsproject.org. Security problems: report privately through <b>Report a vulnerability</b> on the repository's Security tab, not in a public issue.</p>
+
+<h3>Reference documents in the repository</h3>
+<ul>
+  <li><b>docs/UNIVERSITY_DEPLOYMENT.md</b>: the technical deployment guide.</li>
+  <li><b>docs/SECURITY_AND_DATA_HANDLING.md</b>: the full security and data handling guide.</li>
+  <li><b>SECURITY.md</b>: the security policy and how to report problems.</li>
+  <li><b>User Guide</b>: for students, instructors and investigators.</li>
+</ul>
+
+<h2 class="chapter">9. IT checklist</h2>
+<h3>Before go-live (Option 1)</h3>
+<ul class="checklist">
+  <li>Files match <b>SHA256SUMS.txt</b> (or the image was built from a tagged release).</li>
+  <li>Served over HTTPS on a university address.</li>
+  <li><code>curl -sI https://&lt;host&gt;/index.html</code> shows <b>Content-Security-Policy</b> with <code>connect-src 'self' blob: data:</code>, plus X-Content-Type-Options, Referrer-Policy and Permissions-Policy.</li>
+  <li><code>curl -X POST https://&lt;host&gt;/index.html</code> returns 403.</li>
+  <li>In the browser's developer tools (Network tab), loading the sample statements and downloading a workpaper shows requests to your host only.</li>
+  <li>Typing <code>fetch("https://example.com")</code> in the browser console is refused with a Content Security Policy error.</li>
+  <li>The header reads "Private: runs inside your browser" and there is no red demonstration warning.</li>
+</ul>
+<h3>Before go-live (Option 2)</h3>
+<ul class="checklist">
+  <li>Visiting the site without signing in redirects to your identity provider.</li>
+  <li>The app container has no published port; only the sign-in container is reachable, through HTTPS.</li>
+  <li>Two different people do not see each other's projects.</li>
+  <li>Reading the scanned demo statement works, and it reconciles.</li>
+  <li>The case-data volume is on an encrypted disk and in the backup schedule.</li>
+  <li>The sign-in image is pinned to a digest; <code>.env</code> is kept out of version control.</li>
+</ul>
+<h3>Ongoing</h3>
+<ul class="checklist">
+  <li>Someone is assigned to watch for new releases and apply them.</li>
+  <li>Access to the server (Option 2) is reviewed each term.</li>
+  <li>Incidents are reported and handled under your institution's process.</li>
+</ul>
+
+</body>
+</html>

@@ -15,6 +15,13 @@ The **Dashboard** tab has interactive charts (cash flow over time, balances, tra
 
 **Statements stay private.** The versions below read statements on your own computer; nothing is uploaded. Projects are encrypted with a password, and every workpaper records each statement's SHA-256 fingerprint. See [SECURITY.md](SECURITY.md) and the [security and data handling guide](docs/SECURITY_AND_DATA_HANDLING.md) before using it on real cases.
 
+## Guides
+
+- **[User Guide](docs/Bank_Statement_Analyzer_User_Guide.pdf)** (PDF): for students, instructors and investigators. Getting started, every tab, projects, real-case handling and classroom exercises.
+- **[Implementation Guide](docs/Bank_Statement_Analyzer_Implementation_Guide.pdf)** (PDF): for university leadership and IT. The two hosting options, a pilot plan, security, responsibilities and an IT checklist.
+
+Both are built from `docs/guides/` with `python tools/build_guides.py`.
+
 ## Ways to use it
 
 | | Where statements are read | For |
@@ -147,7 +154,7 @@ You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** 
 | `deploy/browser/`, `deploy/server/` | Docker images for the two hosting options |
 | `requirements-lock.txt` | Exact, fingerprinted versions of every package |
 | `tests/` | Automated tests (`python -m pytest`); they run on every push |
-| `SECURITY.md`, `docs/` | Security policy, data handling guide, deployment guide |
+| `SECURITY.md`, `docs/` | Security policy, data handling guide, deployment guide, and the branded User and Implementation Guides (`docs/guides/`, built by `tools/build_guides.py`) |
 | `demo/` | A fictional fraud case for demos and teaching, with an answer key |
 
 ## Trying it without a statement

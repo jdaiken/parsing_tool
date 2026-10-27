@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bank Statement Analyzer: User Guide</title>
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+
+<section class="cover">
+  <div class="cover-top"><img src="../../assets/logo.png" alt="Justice for Fraud Victims Project"></div>
+  <div class="cover-band">
+    <p class="kicker">User Guide</p>
+    <h1>Bank Statement Analyzer</h1>
+    <p class="subtitle">Turn bank statement PDFs into forensic accounting workpapers in minutes.</p>
+    <div class="meta">
+      <span class="free">Free, always</span><br>
+      For students, instructors and fraud investigators<br>
+      Version 1.1 · 2026
+    </div>
+  </div>
+  <div class="cover-foot"><span>Justice for Fraud Victims Project</span><span>justiceforfraudvictimsproject.org</span></div>
+</section>
+
+<section class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>What the analyzer does <span>3</span></li>
+    <li>Getting started <span>4</span></li>
+    <li>Your first analysis <span>6</span></li>
+    <li>Reading the results <span>7</span></li>
+    <li>Projects: keeping a case together <span>13</span></li>
+    <li>Scanned, redacted and credit card statements <span>15</span></li>
+    <li>Using it on real cases safely <span>16</span></li>
+    <li>Teaching with the demo case <span>17</span></li>
+    <li>Questions and troubleshooting <span>18</span></li>
+  </ol>
+</section>
+
+<h2>1. What the analyzer does</h2>
+<p class="lead">Upload bank or credit card statements as PDFs. In a few seconds the analyzer reads every transaction, checks its own work against the statement, looks for fraud patterns and signs of editing, and produces an Excel workpaper you can put in the case file.</p>
+
+<div class="grid">
+  <div class="card"><h4>Reads any bank</h4><p>No setup or templates. Typed PDFs from online banking, scanned paper statements, redacted copies and credit card statements.</p></div>
+  <div class="card"><h4>Checks the math</h4><p>Every account is reconciled against the statement's own balances or printed totals, so you can see whether anything was misread.</p></div>
+  <div class="card"><h4>Spots red flags</h4><p>Fraud patterns such as cash kept under $10,000, gambling, gift cards, new payees and a draining balance, plus signs a statement was edited.</p></div>
+  <div class="card"><h4>Exports workpapers</h4><p>A formatted Excel workpaper with an evidence record, summary financial statements, and interactive dashboard exports.</p></div>
+</div>
+
+<div class="callout tip"><span class="label">Private by design</span>
+<p>When you run the analyzer on your own computer, or from your university's copy, statements are read on your computer and are not uploaded anywhere. Case projects are encrypted with a password you choose.</p></div>
+
+<div class="callout"><span class="label">Findings are leads, not conclusions</span>
+<p>Red flags and document checks show you where to look. Always confirm a finding against the statement itself before it goes into a report.</p></div>
+
+<h2 class="chapter">2. Getting started</h2>
+<p>There are three ways to open the analyzer. They look and work the same.</p>
+
+<table>
+  <tr><th style="width:28%">Way</th><th>How</th><th style="width:30%">Use it for</th></tr>
+  <tr><td><b>Your university's copy</b></td><td>Open the web address your instructor or IT department gives you. Nothing to install.</td><td>Classes, and real cases if your university has approved it</td></tr>
+  <tr><td><b>On your own computer</b></td><td>A one-time install (below). Also reads scanned statements.</td><td>Real cases and independent work</td></tr>
+  <tr><td><b>Public demo</b></td><td>The online demo linked from the project's website.</td><td>The fictional demo case only, never real statements</td></tr>
+</table>
+
+<h3>Installing it on your computer</h3>
+<ol class="steps">
+  <li>Install <b>Python 3.11 or newer</b> from python.org. On Windows, tick <span class="ui">Add python.exe to PATH</span> in the installer.</li>
+  <li>Download the analyzer: on the project's GitHub page choose <span class="ui">Code → Download ZIP</span>, or use <span class="ui">Download the app (.zip)</span> in the analyzer's sidebar. Unzip it.</li>
+  <li>Start it: double-click <b>start.bat</b> (Windows), or run <b>./start.sh</b> (Mac or Linux). The first start installs what the analyzer needs, which takes a few minutes. After that it opens in seconds.</li>
+  <li>Your browser opens the analyzer at <b>http://localhost:8501</b>. The header says <span class="ui">Private: runs on your computer</span>.</li>
+</ol>
+<p class="small muted">Prefer VS Code? Open the unzipped folder with File → Open Folder, then choose Terminal → Run Task → Start the app.</p>
+
+<figure><img src="img/home.png" alt="The analyzer's home page"><figcaption>The home page. The sidebar (left) holds projects and settings; statements are uploaded in the center.</figcaption></figure>
+
+<div class="callout important"><span class="label">Red warning banner?</span>
+<p>If the analyzer shows <b>"Demonstration copy: don't upload real case statements here,"</b> you are on a shared online copy where uploads leave your computer. Use it only with the fictional demo case.</p></div>
+
+<h2 class="chapter">3. Your first analysis</h2>
+<p class="lead">The fastest way to learn the analyzer is the built-in demo case: a fictional elder-fraud investigation at a made-up bank.</p>
+<ol class="steps">
+  <li>Click <span class="ui">Try it with sample statements</span> under the upload box. Three months of checking statements and a credit card statement load.</li>
+  <li>Check the file list. Each statement shows <span class="ui">Read</span>, how many transactions were found, and notes such as <i>Credit card statement</i> or <i>Scanned</i>.</li>
+  <li>Read the <span class="ui">Summary</span> tab, then work through the tabs from left to right.</li>
+</ol>
+<p>To analyze your own statements, drag the PDFs onto the upload box, or click <span class="ui">Upload</span>. You can add several statements at once, including several months and several accounts.</p>
+
+<figure><img src="img/summary.png" alt="Summary tab with statements loaded"><figcaption>After uploading: the file list, then the Summary tab with money in, money out and the number of higher-risk items.</figcaption></figure>
+
+<h4>Settings in the sidebar</h4>
+<ul>
+  <li><b>Flag transactions over ($)</b>: transactions above this amount are flagged as large. The default is $1,000.</li>
+  <li><b>Analyst</b>: your name, printed on the workpapers.</li>
+  <li><b>Include full statement text in the workpaper</b>: adds the raw text of every page, for reference.</li>
+  <li><b>Clear this session</b>: forgets everything uploaded in this browser tab.</li>
+</ul>
+
+<h2 class="chapter">4. Reading the results</h2>
+
+<h3>Dashboard</h3>
+<p>Interactive charts: cash flow over time, balances, transaction types, money out by type, red flags, a risk timeline, top payees and day-of-week patterns. Use the <b>Filters</b> panel to narrow by date, account, transaction type, direction, risk or a search word. Every chart and total updates, and the exports at the bottom (Excel, CSV or an interactive HTML report) contain exactly what you filtered.</p>
+<figure><img src="img/dashboard.png" alt="Dashboard tab"><figcaption>The Dashboard. In the demo case, the April spike is a certificate of deposit cashed in, followed by the account draining.</figcaption></figure>
+
+<h3>Transactions</h3>
+<p>Every transaction in date order, with its category, money in, money out, running balance and risk level. Filter by statement or risk, or search the descriptions (for example <i>casino</i> or <i>Zelle</i>). When a project is open, the <b>Note</b> column lets you write a note on any transaction; it's saved with the project and printed in the workpaper.</p>
+<figure><img src="img/transactions.png" alt="Transactions tab"><figcaption>The Transactions tab.</figcaption></figure>
+
+<h3>Red Flags</h3>
+<p>At the top, <b>Fraud patterns found</b> lists patterns investigators look for, found across all the statements uploaded together:</p>
+<div class="grid three">
+  <div class="card navy"><h4>Cash</h4><p>Cash kept just under $10,000 (structuring), sudden jumps in cash withdrawals, card cash advances.</p></div>
+  <div class="card navy"><h4>Spending</h4><p>Gambling and casino activity, gift card purchases, duplicate payments, round-dollar transfers.</p></div>
+  <div class="card navy"><h4>Account health</h4><p>New payees receiving large sums, money in and straight back out, a draining balance, overdrafts.</p></div>
+</div>
+<p>Below that, the highest-risk transactions are listed with a score from 0 to 100 and the reasons for it, followed by every individual flag.</p>
+<figure><img src="img/redflags.png" alt="Red Flags tab"><figcaption>Fraud patterns found in the demo case, most serious first. Each one explains what was found and on which account.</figcaption></figure>
+
+<h3>Document Check</h3>
+<p>Each file is checked for the traces an edited statement usually leaves: a PDF editing tool, a file re-saved long after it was created, a few lines in a different font, dates outside the statement period or out of order, a "payment from" that actually took money out, balances that don't add up, summary totals that don't match, and figures formatted differently from the rest.</p>
+<figure class="tall"><img src="img/doccheck.png" alt="Document Check results for a doctored statement"><figcaption>The demo's doctored "family copy": nine signs of editing, each with the lines involved.</figcaption></figure>
+<div class="callout"><span class="label">What a result means</span>
+<p>A warning is a reason to get the statement directly from the bank. A clean result does not prove a statement is genuine. Scanned copies allow fewer checks, and the analyzer says so.</p></div>
+
+<h3>Bank Reconciliation</h3>
+<p>The analyzer checks its own reading. For each account it adds the money in and out to the beginning balance and compares the result with the statement's ending balance (or, when balances are redacted, with the totals printed on the statement).</p>
+<ul>
+  <li><b>Reconciled</b>: every transaction was read correctly.</li>
+  <li><b>Variance</b>: something was missed or misread, or the statement itself doesn't add up. Check before relying on it.</li>
+  <li><b>Needs Review</b>: the statement has no balances or totals to check against; reconcile it by hand.</li>
+</ul>
+<figure><img src="img/reconciliation.png" alt="Bank Reconciliation tab"><figcaption>Each account's reconciliation, with the math shown.</figcaption></figure>
+
+<h3>Download Workpapers</h3>
+<p>Two Excel files for the case file:</p>
+<ul>
+  <li><b>Forensic workpaper</b>: a summary (with the app version, analyst and time), an <b>Evidence</b> sheet, every transaction with its category, risk score and source page and line, the flags for review, the document checks, and, with a project open, the case notes and case log.</li>
+  <li><b>Financial statements</b>: a management summary, a statement of activities by month, and the cash position from the reconciliation.</li>
+</ul>
+<p>The <b>Evidence record</b> lists each statement's SHA-256 fingerprint: a code unique to that exact file. Anyone can later confirm that a copy of a statement is byte-for-byte the file you analyzed.</p>
+<figure><img src="img/downloads.png" alt="Download Workpapers tab"><figcaption>Downloads and the evidence record.</figcaption></figure>
+
+<h2 class="chapter">5. Projects: keeping a case together</h2>
+<p class="lead">A project keeps one case's statements, notes and history together, encrypted with a password you choose.</p>
+
+<div class="grid" style="grid-template-columns: 1fr 1.6fr; align-items: start;">
+  <figure style="margin-top:0"><img src="img/newproject.png" alt="New project form"><figcaption>Creating a project in the sidebar.</figcaption></figure>
+  <div>
+    <h3 style="margin-top:0">Creating a project</h3>
+    <ol class="steps">
+      <li>In the sidebar, open <span class="ui">New project</span>.</li>
+      <li>Name it with a <b>case number</b>, not a person's name. The name is the only thing stored unencrypted.</li>
+      <li>Choose a password of at least 10 characters (a short phrase is easiest) and type it twice.</li>
+      <li>Click <span class="ui">Create project</span>. Statements you now upload are saved into the project.</li>
+    </ol>
+    <div class="callout important"><span class="label">Keep the password safe</span>
+    <p>Nobody can recover a lost password, including the analyzer's developers. Store it in your organization's password manager.</p></div>
+  </div>
+</div>
+
+<h3>Working in a project</h3>
+<ul>
+  <li><b>Project tab</b>: case notes, a description, and a note for each statement. Tick <span class="ui">Remove</span> to take a statement out.</li>
+  <li><b>Transactions tab</b>: the Note column for notes on single transactions.</li>
+  <li><b>Case log</b>: records when statements were added (with their fingerprints) or removed, when notes were saved, and when the project was downloaded.</li>
+  <li><b>Lock project</b> (sidebar): closes the project until the password is typed again. Do this before leaving your computer.</li>
+</ul>
+<figure><img src="img/project.png" alt="Project tab"><figcaption>The Project tab: statements, case notes, the case log, and options to download or close the case.</figcaption></figure>
+
+<h3>Sharing, reopening and closing</h3>
+<ul>
+  <li><b>Download the project</b> (Project tab): saves everything in one encrypted <b>.bsacase</b> file protected by a password you type. Send the password separately from the file, never in the same email.</li>
+  <li><b>Open a project file</b> (sidebar): opens a .bsacase file on this or another computer, with its password.</li>
+  <li><b>Close case and erase</b>: removes the project from the analyzer when the case is finished. Download it first if your organization must keep it.</li>
+</ul>
+
+
+<h2 class="chapter">6. Scanned, redacted and credit card statements</h2>
+<table>
+  <tr><th style="width:24%">Statement</th><th>What the analyzer does</th></tr>
+  <tr><td><b>Scanned</b> (pictures of pages)</td><td>Reads them with OCR (text recognition) on your computer. A few seconds per page. Works in the computer version and on university servers that offer it; the in-browser version shows a message instead.</td></tr>
+  <tr><td><b>Redacted</b></td><td>Blacked-out text shows as <i>[redacted]</i>. If an amount is blacked out but the balance isn't, the amount is worked out from the change in balance. When balances are redacted, the reconciliation uses the statement's printed totals.</td></tr>
+  <tr><td><b>Leaky redactions</b></td><td>If black boxes were drawn over text that is still in the PDF, the analyzer hides that text and warns you not to share the file as redacted.</td></tr>
+  <tr><td><b>Credit cards</b></td><td>Recognized automatically. Charges, fees and interest are money out; payments and refunds are money in. The reconciliation checks previous balance + charges − payments = new balance.</td></tr>
+  <tr><td><b>Several months in one PDF</b></td><td>Split into separate statements by statement period.</td></tr>
+</table>
+
+<h2 class="chapter">7. Using it on real cases safely</h2>
+<p class="lead">The analyzer protects statements on screen and in projects. These habits protect them everywhere else.</p>
+<div class="grid">
+  <div class="card"><h4>Your computer</h4><p>Full-disk encryption on, automatic screen lock, updates installed, your own login. Never a public or shared computer. Use a browser profile without extensions for case work.</p></div>
+  <div class="card"><h4>Where you work</h4><p>Only on your computer or your organization's approved copy. Never upload real statements to a copy showing the red "Demonstration copy" banner.</p></div>
+  <div class="card"><h4>Files</h4><p>Workpapers and exports are not encrypted: keep them only in storage your organization approves. No personal cloud accounts, USB drives or email.</p></div>
+  <div class="card"><h4>Names</h4><p>Use case numbers for projects and file names, not victims' names.</p></div>
+  <div class="card"><h4>Sharing</h4><p>Share a project as a .bsacase file and send its password separately, by a different channel.</p></div>
+  <div class="card"><h4>Closing</h4><p>Download the project if it must be kept, then use Close case and erase. Delete working copies of exports on schedule.</p></div>
+</div>
+<div class="callout important"><span class="label">If something goes wrong</span>
+<p>A lost laptop, a file sent to the wrong person or an exposed password: tell your supervisor and your IT security office immediately, and note which statements and names were involved.</p></div>
+<p class="small muted">Students work on real cases only under supervision, after signing a confidentiality agreement, and with written authorization from the victim or appropriate legal authority on file.</p>
+
+<h2 class="chapter">8. Teaching with the demo case</h2>
+<p class="lead">The demo case is entirely fictional: a made-up bank, customer and caregiver, with every page marked as a sample. It is safe to use anywhere.</p>
+<p><b>The story:</b> Evelyn Hartwell, a retired widow, hires a caregiver in April. Over two months her account goes from about $16,000, plus a $50,000 certificate of deposit, to overdrawn. The caregiver shows the family a doctored copy of April that looks fine.</p>
+<table>
+  <tr><th style="width:36%">Exercise</th><th>What students should find</th></tr>
+  <tr><td>Load the sample statements and compare March with April and May on the Dashboard</td><td>A normal March, a $50,000 deposit in April, then the balance draining to below zero by the end of May</td></tr>
+  <tr><td>Review Fraud patterns found on the Red Flags tab</td><td>New payees (the caregiver's company and the caregiver), cash kept under $10,000, casino activity, gift cards, a duplicate payment, overdrafts</td></tr>
+  <tr><td>Search the Transactions tab for "Lucky Star" and "Pruitt"</td><td>The casino withdrawals, and the Zelle payments to the caregiver</td></tr>
+  <tr><td>Click Try a doctored statement and open the Document Check tab</td><td>Nine signs the family copy was edited, and its failed reconciliation</td></tr>
+  <tr><td>Download the workpaper and open the Evidence sheet</td><td>Each statement's fingerprint, and the source page and line of every transaction</td></tr>
+</table>
+<p>The full answer key is in <b>demo/ANSWER_KEY.md</b>. To show OCR, drag <b>demo/6_checking_2025-05_scanned_redacted.pdf</b> into the computer version.</p>
+
+<h2 class="chapter">9. Questions and troubleshooting</h2>
+<h4>A statement shows "Variance" on the Bank Reconciliation tab.</h4>
+<p>Something didn't add up. Compare the transactions with the PDF: look for a missing line, a misread amount or a line read in the wrong direction. The Document Check tab may also show why. If the reader made the mistake, let your instructor or the project know so it can be fixed.</p>
+<h4>"No transactions found."</h4>
+<p>The PDF may be a scanned image (use the computer version), password-protected, or not a statement. Try opening it in a PDF viewer first.</p>
+<h4>A scanned statement isn't read.</h4>
+<p>Reading scans needs the computer version (or a university server that offers it). The in-browser version says so next to the file.</p>
+<h4>I forgot a project's password.</h4>
+<p>It can't be recovered. If you downloaded a .bsacase copy with a different password, open that instead.</p>
+<h4>I can't see the sidebar.</h4>
+<p>On a narrow window it starts closed. Click the <b>»</b> arrow at the top left of the page.</p>
+<h4>Does it work with my bank?</h4>
+<p>It reads statements from any bank without setup, and the Bank Reconciliation tab shows whether each one was read correctly. 57 major banks and card issuers are also labelled by name.</p>
+<h4>Is it really free?</h4>
+<p>Yes, always. It is open source under the Apache License 2.0, © 2026 Justice for Fraud Victims Project.</p>
+
+<div class="callout tip" style="margin-top:0.3in"><span class="label">More help</span>
+<p>Your instructor or your organization's IT team can help with your university's copy. The project's README, security guide and deployment guide are on its GitHub page.</p></div>
+
+</body>
+</html>
