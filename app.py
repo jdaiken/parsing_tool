@@ -1356,7 +1356,6 @@ with template_tab:
                 st.error(msg)
 
 st.markdown(
-    f'<div class="app-footer">{APP_NAME} · <a href="{ORG_URL}" target="_blank" rel="noopener noreferrer">{ORG_NAME}</a>'
-    " · Built for forensic accounting education</div>",
+    f'<div class="app-footer">{APP_NAME} · <a href="{ORG_URL}" target="_blank" rel="noopener noreferrer">{ORG_NAME}</a></div>',
     unsafe_allow_html=True,
 )
