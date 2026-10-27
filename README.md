@@ -49,7 +49,11 @@ The reader handles these common layouts:
 - section headings such as "Deposits and other additions" and "Withdrawals and other subtractions", with section totals;
 - credit card statements with payments printed as negatives.
 
-These layouts were tested with made-up statements, not with real statements from those banks; the real statements tested so far are a scanned, redacted credit-union statement and the two samples in this folder. The Bank Reconciliation tab shows a variance if a statement wasn't read correctly.
+What has been tested:
+
+- **Real statements:** a scanned, redacted credit-union statement (3 months, 2 accounts; every account agrees with the statement's printed totals) and the two samples in this folder.
+- **Public synthetic US-style statements with published correct answers** (fictional banks, no real data; from [robin421/bank-statement-to-excel](https://github.com/robin421/bank-statement-to-excel) and the [bankstatemently benchmark](https://github.com/bankstatemently/bank-statement-parsing-benchmark)): Chase-, Bank of America- and Wells Fargo-style checking, a savings statement with no balance column, a credit union with negatives in parentheses, a 3-page business statement with debit/credit columns, and a credit card. All 141 transactions with published answers were read exactly right, and every statement that prints balances or totals reconciles.
+- No real statements from the 57 named banks have been tested yet. The Bank Reconciliation tab shows a variance if a statement wasn't read correctly.
 
 ## Adding a new bank
 

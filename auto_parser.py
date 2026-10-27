@@ -105,7 +105,7 @@ CARD_DEBIT_SECTION_RE = re.compile(
 CARD_CREDIT_WORDS = ("payment", "credit", "refund", "return", "reversal")
 CHECK_SECTION_RE = re.compile(r"checks(?!\s*card)|checkspaid", re.IGNORECASE)
 SKIP_SECTION_RE = re.compile(
-    r"daily\s+(ending\s+)?balance|balance\s+summary|ledger\s+balance|interest\s+charge\s+calculation",
+    r"daily\s+(ending\s+)?balance|balance\s+summary|ledger\s+balance|interest\s+charge\s+calculation|year[-\s]to[-\s]date|\bytd\b",
     re.IGNORECASE,
 )
 COLUMN_HEADER_RE = re.compile(r"\bdate\b.*\b(description|amount|balance|debits?|credits?|withdrawals?|deposits?)\b", re.IGNORECASE)
@@ -609,6 +609,12 @@ def auto_parse(
     multi = sum(1 for c in real if len(c.amounts) >= 2)
     # Some banks print the balance only on the last line of each day, so a minority of lines can be enough.
     has_balance_column = multi >= 2 and multi / len(real) >= 0.25
+    # A single signed amount column: money out printed negative (money in, on a card), the rest unsigned.
+    # Then an unsigned amount means the other direction, whatever its description says.
+    hints = [c.amounts[0][1] for c in real if c.amounts]
+    signed_column = (
+        len(hints) >= 4 and hints.count(-1) / len(hints) >= 0.1 and not any(h in (1, DEBIT_MARK) for h in hints)
+    )
 
     base_year = _infer_year(full_text)
     months = {d.month for d in (_to_date(c.date_raw, base_year, False) for c in candidates if c.date_raw) if d}
@@ -677,6 +683,8 @@ def auto_parse(
             guess, certain = cand.section, True
         if guess is None and cand.section == "checks":
             guess, certain = "debit", True
+        if guess is None and signed_column and sign == 0:
+            guess, certain = ("debit" if is_card else "credit"), True
         if guess is None:
             guess = _keyword_direction(cand.description, credit_words, is_card) or default_direction
 
