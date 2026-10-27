@@ -14,7 +14,7 @@
     <style>
       body { margin: 0; background: #ffffff; }
       #loading { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 36rem; margin: 5rem auto; padding: 0 1rem; color: #374151; }
-      #loading .org { font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: #8a6d12; margin: 0; }
+      #loading .org { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #8a6d12; margin: 0; }
       #loading h1 { color: #14284b; font-size: 1.7rem; margin: 0.2rem 0 0.6rem; }
       #loading .bar { height: 4px; background: #e3e7ee; border-radius: 2px; overflow: hidden; margin: 1.2rem 0; }
       #loading .bar::after { content: ""; display: block; height: 100%; width: 35%; background: #c9a227; animation: slide 1.4s ease-in-out infinite; }
@@ -42,7 +42,16 @@
         "template_manager.py",
         "workpaper_export.py",
         "web_app.py",
+        "Sample-Statement.pdf",
+        "statement_sample1.pdf",
       ];
+      // Included only if present, so adding a logo needs no change here.
+      const optionalFiles = ["assets/logo.svg", "assets/logo.png", "assets/logo.jpg"];
+      for (const name of optionalFiles) {
+        try {
+          if ((await fetch(`./${name}`, { method: "HEAD" })).ok) sourceFiles.push(name);
+        } catch {}
+      }
 
       mount(
         {

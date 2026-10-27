@@ -52,6 +52,11 @@ Statements must be PDFs downloaded from online banking. Scanned paper statements
 | `workpaper_export.py`, `financial_statements.py` | Excel exports |
 | `index.html`, `web_app.py` | The in-browser version |
 
+## Trying it without a statement
+
+Click **Try it with sample statements** under the upload box. It loads the two sample PDFs in this folder.
+
 ## Branding
 
-The app name, organization and colors are set at the top of `app.py` (`APP_NAME`, `ORG_NAME`, `NAVY`, `GOLD`), in `.streamlit/config.toml`, and in `index.html`.
+- **Logo:** save the organization's logo as `assets/logo.png` (or `logo.svg` / `logo.jpg`). Both versions pick it up automatically.
+- **Name and colors:** set at the top of `app.py` (`APP_NAME`, `ORG_NAME`, `NAVY`, `GOLD`), in `.streamlit/config.toml`, and in `index.html`.

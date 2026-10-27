@@ -593,6 +593,8 @@ def analyze_statement(file_name: str, file_bytes: bytes) -> StatementAnalysis:
     if not preview.empty:
         preview = preview[["txn_date", "description", "debit", "credit", "running_balance"]]
         preview["txn_date"] = pd.to_datetime(preview["txn_date"], errors="coerce").dt.date
+        for money_col in ("debit", "credit", "running_balance"):
+            preview[money_col] = pd.to_numeric(preview[money_col], errors="coerce")
     bank_name = output.bank_name or suggest_bank_name(full_text)
     return StatementAnalysis(
         has_text=bool(full_text.strip()),
@@ -635,7 +637,11 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
         if not rows:
             rows = auto_parse(pages, statement_id, account_number, statement_date).rows
     elif fmt == "carson_bank_statement":
-        rows = _parse_carson_lines(pages, statement_id, account_number, statement_date)
+        # The generic reader verifies each running balance, so it skips the summary and interest
+        # tables that the line-based Carson parser misreads as transactions.
+        rows = auto_parse(pages, statement_id, account_number, statement_date, bank_format=fmt).rows
+        if not rows:
+            rows = _parse_carson_lines(pages, statement_id, account_number, statement_date)
     elif fmt == "legacy_sectioned_statement":
         rows = _parse_legacy_lines(pages, statement_id, account_number, statement_date)
     else:

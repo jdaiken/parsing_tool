@@ -415,6 +415,7 @@ def auto_parse(
     prev_balance: Dict[Optional[str], Optional[float]] = {}
     balance_rows = 0
     verified = 0
+    verified_by_account: Dict[Optional[str], int] = {}
 
     for cand in candidates:
         acct = cand.account or account_number
@@ -446,6 +447,7 @@ def auto_parse(
             prev_balance[acct] = running_balance
             balance_rows += 1
             verified += int(checked)
+            verified_by_account[acct] = verified_by_account.get(acct, 0) + int(checked)
         elif len(cand.amounts) >= 2:
             nonzero = [a for a in cand.amounts if a[0] != 0]
             amount, sign = nonzero[0] if nonzero else cand.amounts[0]
@@ -485,6 +487,13 @@ def auto_parse(
                 "source_line": cand.line_no,
             }
         )
+
+    # An account where no running balance could be checked (e.g. a loan's payment table) has no
+    # trustworthy balance column; leave its balances blank so it reconciles as "needs review".
+    verified_accounts = {acct for acct, ok in verified_by_account.items() if ok}
+    for row in rows:
+        if row["account_number"] not in verified_accounts:
+            row["running_balance"] = None
 
     return AutoParseOutput(
         rows=rows,

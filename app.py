@@ -7,11 +7,15 @@ dashboards, export Excel workpapers, and manage custom bank-format templates.
 
 from __future__ import annotations
 
+import base64
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import List
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -24,41 +28,126 @@ from workpaper_export import build_workpaper
 # --- Page setup and branding ---
 
 # Change these to rebrand the app; the colors also live in .streamlit/config.toml and index.html.
+# To show the organization's logo, save it as assets/logo.png (or .svg / .jpg).
 APP_NAME = "Bank Statement Analyzer"
 APP_TAGLINE = "Turn bank statement PDFs into forensic accounting workpapers in minutes."
 ORG_NAME = "Justice for Fraud Victims Project"
 NAVY = "#14284B"
+NAVY_LIGHT = "#1F3B6B"
 GOLD = "#C9A227"
+RISK_COLORS = {"High": "#B42318", "Medium": "#D97706", "Low": "#15803D"}
+
+APP_DIR = Path(__file__).resolve().parent
+SAMPLE_FILES = ["Sample-Statement.pdf", "statement_sample1.pdf"]
 
 st.set_page_config(page_title=APP_NAME, page_icon=":material/account_balance:", layout="wide")
+
+
+def _logo_html() -> str:
+    """The organization's logo if one was added to assets/, otherwise a scales-of-justice mark."""
+    for name, mime in (("logo.svg", "image/svg+xml"), ("logo.png", "image/png"), ("logo.jpg", "image/jpeg")):
+        path = APP_DIR / "assets" / name
+        if path.exists():
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            return f'<img class="brand-logo" src="data:{mime};base64,{encoded}" alt="{ORG_NAME} logo">'
+    return (
+        f'<div class="brand-mark"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="{NAVY}" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        '<path d="M12 3v18M5 21h14M4 7h16M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/></svg></div>'
+    )
+
 
 st.markdown(
     f"""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    .stApp, .stApp p, .stApp label, .stApp button, .stApp input, .stApp textarea, .stApp li, .stApp h1, .stApp h2,
+    .stApp h3, .stApp h4, .stApp h5, .stApp [data-baseweb="tab"] {{
+        font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;}}
+    .stApp [data-testid="stIconMaterial"] {{font-family: 'Material Symbols Rounded' !important;}}
     #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], footer {{visibility: hidden; height: 0;}}
-    .block-container {{padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1200px;}}
-    .brand-bar {{display: flex; align-items: center; gap: 0.9rem; background: {NAVY}; color: #FFFFFF;
-                 border-radius: 12px; padding: 1.1rem 1.4rem; border-bottom: 4px solid {GOLD};}}
-    .brand-mark {{width: 44px; height: 44px; flex: none; border-radius: 10px; background: {GOLD};
+    .block-container {{padding-top: 1.4rem; padding-bottom: 2rem; max-width: 1180px;}}
+    h1, h2, h3, h4, h5 {{color: {NAVY}; letter-spacing: -0.01em;}}
+
+    .brand {{position: relative; overflow: hidden; border-radius: 16px; padding: 1.7rem 1.9rem;
+             background: linear-gradient(135deg, {NAVY} 0%, {NAVY_LIGHT} 100%); color: #FFFFFF;
+             box-shadow: 0 10px 30px rgba(20, 40, 75, 0.18);}}
+    .brand::after {{content: ""; position: absolute; right: -60px; top: -60px; width: 240px; height: 240px;
+                    border-radius: 50%; background: rgba(201, 162, 39, 0.10);}}
+    .brand::before {{content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: {GOLD};}}
+    .brand-row {{display: flex; align-items: center; gap: 1.1rem; position: relative; z-index: 1;}}
+    .brand-mark {{width: 56px; height: 56px; flex: none; border-radius: 14px; background: {GOLD};
                   display: flex; align-items: center; justify-content: center;}}
-    .brand-org {{font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: #E8D9A8; margin: 0;}}
-    .brand-name {{font-size: 1.55rem; font-weight: 700; margin: 0.1rem 0 0 0; color: #FFFFFF; line-height: 1.2;}}
-    .brand-tagline {{font-size: 0.95rem; color: #D6DEEB; margin: 0.2rem 0 0 0;}}
-    .privacy {{margin: 0.7rem 0 1.1rem 0; padding: 0.55rem 0.9rem; border-radius: 8px; font-size: 0.88rem;
-               background: #EEF6F1; color: #1E5A3C; border: 1px solid #CFE6D8;}}
+    .brand-logo {{height: 60px; width: auto; flex: none; background: #FFFFFF; border-radius: 12px; padding: 6px;}}
+    .brand-org {{font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #E8D9A8;}}
+    .brand-name {{font-size: 2rem; font-weight: 700; color: #FFFFFF; line-height: 1.15; margin-top: 0.15rem;}}
+    .brand-tagline {{font-size: 1rem; color: #D6DEEB; margin-top: 0.3rem;}}
+    .brand-pills {{display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.1rem; position: relative; z-index: 1;}}
+    .pill {{display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 500;
+            padding: 0.3rem 0.75rem; border-radius: 999px; background: rgba(255,255,255,0.10);
+            border: 1px solid rgba(255,255,255,0.22); color: #FFFFFF;}}
+    .pill-gold {{background: rgba(201,162,39,0.18); border-color: rgba(201,162,39,0.55); color: #F3E3AE;}}
+
+    .section-title {{font-size: 1.05rem; font-weight: 600; color: {NAVY}; margin: 1.6rem 0 0.2rem 0;}}
+    .section-sub {{font-size: 0.9rem; color: #5B6575; margin-bottom: 0.6rem;}}
+    [data-testid="stFileUploaderDropzone"] {{border: 2px dashed #C9D3E3; background: #F7F9FC; border-radius: 12px;}}
+
+    .feature-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.9rem; margin-top: 0.4rem;}}
+    .feature {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1.1rem 1.15rem;
+               box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);}}
+    .feature-icon {{width: 38px; height: 38px; border-radius: 10px; background: #EEF2F8; display: flex;
+                    align-items: center; justify-content: center; margin-bottom: 0.7rem;}}
+    .feature h4 {{margin: 0 0 0.3rem 0; font-size: 0.98rem; color: {NAVY};}}
+    .feature p {{margin: 0; font-size: 0.86rem; color: #5B6575; line-height: 1.45;}}
+
+    .kpi-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 0.6rem 0 1rem 0;}}
+    .kpi {{background: #FFFFFF; border: 1px solid #E3E7EE; border-top: 3px solid {NAVY}; border-radius: 12px;
+           padding: 0.85rem 1rem; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);}}
+    .kpi.gold {{border-top-color: {GOLD};}}
+    .kpi.red {{border-top-color: {RISK_COLORS['High']};}}
+    .kpi.green {{border-top-color: {RISK_COLORS['Low']};}}
+    .kpi-label {{font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6B7280;}}
+    .kpi-value {{font-size: 1.55rem; font-weight: 700; color: #111827; margin-top: 0.2rem; font-variant-numeric: tabular-nums;}}
+    .kpi-sub {{font-size: 0.8rem; color: #6B7280; margin-top: 0.1rem;}}
+
+    .file-list {{display: flex; flex-direction: column; gap: 0.35rem; margin: 0.4rem 0 0.2rem 0;}}
+    .file-row {{display: flex; align-items: center; gap: 0.6rem; font-size: 0.88rem; color: #1F2937;
+                background: #F7F9FC; border: 1px solid #E3E7EE; border-radius: 10px; padding: 0.45rem 0.75rem;}}
+    .file-row .meta {{color: #6B7280; margin-left: auto; font-size: 0.8rem;}}
+    .status {{display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.6rem; border-radius: 999px;}}
+    .status.ok {{background: #E7F6EC; color: #15803D;}}
+    .status.warn {{background: #FEF3E2; color: #B45309;}}
+    .status.bad {{background: #FDECEA; color: #B42318;}}
+
+    .recon-card {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1rem 1.15rem; margin-bottom: 0.8rem;}}
+    .recon-head {{display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem;}}
+    .recon-head .title {{font-weight: 600; color: {NAVY};}}
+    .recon-math {{display: grid; grid-template-columns: 1fr auto; row-gap: 0.25rem; max-width: 420px;
+                  font-size: 0.9rem; color: #374151; font-variant-numeric: tabular-nums;}}
+    .recon-math .total {{border-top: 1px solid #D1D5DB; padding-top: 0.25rem; font-weight: 600; color: #111827;}}
+    .recon-note {{font-size: 0.82rem; color: #6B7280; margin-top: 0.5rem;}}
+
+    .download-card {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1.1rem 1.15rem; min-height: 150px;}}
+    .download-card h4 {{margin: 0 0 0.3rem 0; color: {NAVY}; font-size: 1rem;}}
+    .download-card p {{margin: 0 0 0.6rem 0; font-size: 0.86rem; color: #5B6575;}}
+
     .steps {{counter-reset: step; list-style: none; padding: 0; margin: 0.4rem 0 1rem 0;}}
-    .steps li {{counter-increment: step; display: flex; gap: 0.6rem; align-items: baseline; margin: 0.45rem 0;
-                font-size: 0.92rem; color: #1F2937;}}
+    .steps li {{counter-increment: step; display: flex; gap: 0.6rem; align-items: baseline; margin: 0.5rem 0;
+                font-size: 0.9rem; color: #1F2937;}}
     .steps li::before {{content: counter(step); flex: none; width: 1.45rem; height: 1.45rem; border-radius: 50%;
-                        background: {NAVY}; color: #FFFFFF; font-size: 0.78rem; font-weight: 600;
+                        background: {NAVY}; color: #FFFFFF; font-size: 0.75rem; font-weight: 600;
                         display: inline-flex; align-items: center; justify-content: center;}}
-    .section-card {{border: 1px solid #E3E7EE; border-left: 4px solid {GOLD}; border-radius: 8px;
-                    padding: 0.8rem 1rem; background: #FFFFFF; color: #1F2937; margin-bottom: 0.8rem;}}
-    .app-footer {{margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid #E3E7EE;
+    .section-card {{border: 1px solid #E3E7EE; border-left: 4px solid {GOLD}; border-radius: 10px;
+                    padding: 0.85rem 1rem; background: #FFFFFF; color: #1F2937; margin-bottom: 0.8rem;}}
+    .stTabs [data-baseweb="tab-list"] {{gap: 0.3rem; border-bottom: 1px solid #E3E7EE;}}
+    .stTabs [data-baseweb="tab"] {{font-weight: 600; padding: 0.55rem 0.9rem;}}
+    .stTabs [aria-selected="true"] {{color: {NAVY};}}
+    .stTabs [data-baseweb="tab-highlight"] {{background-color: {GOLD};}}
+    div[data-testid="stMetric"] {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 12px; padding: 0.75rem 0.95rem;}}
+    .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {{border-radius: 10px; font-weight: 600;}}
+    section[data-testid="stSidebar"] {{background: #F7F9FC; border-right: 1px solid #E3E7EE;}}
+    .app-footer {{margin-top: 3rem; padding-top: 1.1rem; border-top: 1px solid #E3E7EE;
                   font-size: 0.8rem; color: #6B7280; text-align: center;}}
-    div[data-testid="stMetric"] {{background: #F7F9FC; border: 1px solid #E3E7EE; border-radius: 10px; padding: 0.7rem 0.9rem;}}
-    .stTabs [data-baseweb="tab-list"] {{gap: 0.25rem;}}
-    .stTabs [data-baseweb="tab"] {{font-weight: 600;}}
     </style>
     """,
     unsafe_allow_html=True,
@@ -67,32 +156,82 @@ st.markdown(
 # Where the app is running decides what we can promise about the uploaded files.
 privacy_note = ""
 if sys.platform == "emscripten":
-    privacy_note = "🔒 Private by design: this app runs inside your browser, so statements you upload never leave your computer."
+    privacy_note = "Private: runs inside your browser"
 elif st.context.headers.get("Host", "").split(":")[0] in ("localhost", "127.0.0.1"):
-    privacy_note = "🔒 Private by design: this app is running on your own computer, so statements you upload stay here."
+    privacy_note = "Private: runs on your computer"
 
+pills = [f'<span class="pill pill-gold">🔒 {privacy_note}</span>'] if privacy_note else []
+pills += ['<span class="pill">Reads any bank</span>', '<span class="pill">Checks every balance</span>', '<span class="pill">Excel workpapers</span>']
 st.markdown(
     f"""
-    <div class="brand-bar">
-      <div class="brand-mark">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{NAVY}" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 3v18M5 21h14M4 7h16M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/>
-        </svg>
+    <div class="brand">
+      <div class="brand-row">
+        {_logo_html()}
+        <div>
+          <div class="brand-org">{ORG_NAME}</div>
+          <div class="brand-name">{APP_NAME}</div>
+          <div class="brand-tagline">{APP_TAGLINE}</div>
+        </div>
       </div>
-      <div>
-        <div class="brand-org">{ORG_NAME}</div>
-        <div class="brand-name">{APP_NAME}</div>
-        <div class="brand-tagline">{APP_TAGLINE}</div>
-      </div>
+      <div class="brand-pills">{''.join(pills)}</div>
     </div>
-    {f'<div class="privacy">{privacy_note}</div>' if privacy_note else '<div style="height:1rem"></div>'}
     """,
     unsafe_allow_html=True,
 )
 
 
 # --- Display helpers ---
+
+
+def _money(value) -> str:
+    """Format a number as $1,234.56 (negative as -$1,234.56); blank when missing."""
+    if value is None or pd.isna(value):
+        return "—"
+    return f"-${abs(value):,.2f}" if value < 0 else f"${value:,.2f}"
+
+
+def _kpis(items: List[tuple]) -> None:
+    """Render a row of KPI cards from (label, value, note, accent) tuples."""
+    cards = "".join(
+        f'<div class="kpi {accent}"><div class="kpi-label">{label}</div>'
+        f'<div class="kpi-value">{value}</div><div class="kpi-sub">{note}</div></div>'
+        for label, value, note, accent in items
+    )
+    st.markdown(f'<div class="kpi-grid">{cards}</div>', unsafe_allow_html=True)
+
+
+def _section(title: str, subtitle: str = "") -> None:
+    sub = f'<div class="section-sub">{subtitle}</div>' if subtitle else ""
+    st.markdown(f'<div class="section-title">{title}</div>{sub}', unsafe_allow_html=True)
+
+
+MONEY_COLUMN = {"format": "dollar"}
+DATE_COLUMN = st.column_config.DateColumn("Date", format="MMM D, YYYY")
+
+
+def _money_cells(frame: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+    """Show amounts as $1,234.56 text so blank debits/credits appear empty instead of "None"."""
+    frame = frame.copy()
+    for col in columns:
+        frame[col] = pd.to_numeric(frame[col], errors="coerce").map(lambda v: "" if pd.isna(v) else _money(v))
+    return frame
+
+
+def _money_text_column(label: str):
+    return st.column_config.TextColumn(label, alignment="right")
+
+
+
+
+@dataclass
+class _BundledFile:
+    """A sample PDF shipped with the app, shaped like a Streamlit upload."""
+
+    name: str
+    data: bytes
+
+    def getvalue(self) -> bytes:
+        return self.data
 
 
 def _display_category_name(cat: str) -> str:
@@ -176,6 +315,14 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
             else:
                 status = "Variance"
                 notes = "Expected ending balance differs from statement running balance."
+                # Checks listed only in a check summary never touch the register's running balance.
+                unregistered_checks = ordered[(ordered["transaction_type"] == "check") & ordered["running_balance"].isna()]
+                unregistered_total = float(pd.to_numeric(unregistered_checks["debit"], errors="coerce").fillna(0).sum())
+                if unregistered_total and abs(difference - unregistered_total) <= 0.01:
+                    notes = (
+                        f"The difference equals the {len(unregistered_checks)} checks (${unregistered_total:,.2f}) listed in the "
+                        "statement's check summary that don't appear in its transaction register. Trace these checks."
+                    )
         rows.append(
             {
                 "statement_id": statement_id,
@@ -211,13 +358,28 @@ with st.sidebar:
 
 # --- File upload and parsing ---
 
+_section("Upload statements", "Drop in one or more PDFs downloaded from online banking. Scanned paper statements can't be read.")
 uploads = st.file_uploader(
     "Upload bank statement PDFs",
     type=["pdf"],
     accept_multiple_files=True,
-    help="Use the PDF downloaded from online banking. Scanned paper statements can't be read.",
+    label_visibility="collapsed",
 )
-has_uploads = bool(uploads)
+if uploads:
+    st.session_state["use_samples"] = False
+sample_col, clear_col, _ = st.columns([1.6, 1, 2.4])
+available_samples = [name for name in SAMPLE_FILES if (APP_DIR / name).exists()]
+if not uploads and available_samples:
+    if sample_col.button("Try it with sample statements", icon=":material/description:"):
+        st.session_state["use_samples"] = True
+    if st.session_state.get("use_samples") and clear_col.button("Clear samples"):
+        st.session_state["use_samples"] = False
+        st.rerun()
+
+statement_files = list(uploads or [])
+if not statement_files and st.session_state.get("use_samples"):
+    statement_files = [_BundledFile(name, (APP_DIR / name).read_bytes()) for name in available_samples]
+has_uploads = bool(statement_files)
 
 # Empty DataFrame schemas used before any files are parsed.
 tx_columns = [
@@ -250,29 +412,30 @@ all_raw = pd.DataFrame(columns=["statement_id", "page", "text"])
 results: List[ParseResult] = []
 
 if has_uploads:
-    parse_errors: List[str] = []
-    for uploaded_file in uploads:
+    file_rows: List[str] = []
+    for statement_file in statement_files:
         try:
             # Parse each PDF into transactions, risk flags, and optional raw text.
-            result = parse_statement(uploaded_file.name, uploaded_file.getvalue(), large_txn_threshold)
-            results.append(result)
+            result = parse_statement(statement_file.name, statement_file.getvalue(), large_txn_threshold)
         except Exception as exc:  # pragma: no cover
-            parse_errors.append(f"{uploaded_file.name}: {exc}")
-    if parse_errors:
-        st.error("Some files could not be parsed:")
-        for err in parse_errors:
-            st.write(f"- {err}")
-    # Tell the user, file by file, how each statement was read.
-    for uploaded_file, result in zip([u for u in uploads if not any(e.startswith(f"{u.name}:") for e in parse_errors)], results):
+            file_rows.append(f'<div class="file-row"><span class="status bad">Error</span>{statement_file.name}<span class="meta">{exc}</span></div>')
+            continue
+        results.append(result)
+        # Tell the user, file by file, how each statement was read.
         if result.transactions.empty:
             if not "".join(result.raw_text.get("text", pd.Series(dtype=str)).fillna("")).strip():
-                st.warning(f"{uploaded_file.name}: no readable text. It looks like a scanned image; use the bank's downloaded PDF instead.")
+                note = "No readable text: looks like a scanned image. Use the bank's downloaded PDF."
             else:
-                st.warning(f"{uploaded_file.name}: no transactions found. Try it in the Template Manager tab to see what the app can read.")
+                note = "No transactions found. Try it in the Add a New Bank tab."
+            file_rows.append(f'<div class="file-row"><span class="status warn">Check</span>{statement_file.name}<span class="meta">{note}</span></div>')
         else:
             layout = str(result.transactions["bank_format"].iloc[0])
-            layout = BUILT_IN_FORMAT_NAMES.get(layout, layout.replace("auto:", "auto-detected: ").replace("custom:", "template: "))
-            st.caption(f"✅ {uploaded_file.name}: {len(result.transactions)} transactions ({layout})")
+            layout = BUILT_IN_FORMAT_NAMES.get(layout, layout.replace("auto:", "Auto-detected: ").replace("custom:", "Saved bank: "))
+            file_rows.append(
+                f'<div class="file-row"><span class="status ok">Read</span>{statement_file.name}'
+                f'<span class="meta">{len(result.transactions)} transactions · {layout}</span></div>'
+            )
+    st.markdown(f'<div class="file-list">{"".join(file_rows)}</div>', unsafe_allow_html=True)
     if results:
         # Merge parsed output from all successfully processed statements.
         all_transactions = pd.concat([r.transactions for r in results], ignore_index=True)
@@ -291,45 +454,100 @@ medium_risk_count = int((all_transactions.get("risk_level") == "medium").sum()) 
 avg_risk_score = float(pd.to_numeric(all_transactions.get("risk_score"), errors="coerce").fillna(0).mean()) if not all_transactions.empty else 0.0
 flag_count = len(all_flags)
 reconciliation_df = _build_reconciliation_table(all_transactions)
+has_data = has_uploads and not all_transactions.empty
+EMPTY_NOTE = "Upload a statement above, or click **Try it with sample statements**, to see results here."
 
 # --- Main tabbed UI ---
 
+st.markdown('<div style="height:0.6rem"></div>', unsafe_allow_html=True)
 overview_tab, transactions_tab, risk_tab, reconciliation_tab, export_tab, template_tab = st.tabs(
     ["Summary", "Transactions", "Red Flags", "Bank Reconciliation", "Download Workpapers", "Add a New Bank"]
 )
 
+
+def _feature(icon_path: str, title: str, text: str) -> str:
+    return (
+        f'<div class="feature"><div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" '
+        f'stroke="{NAVY}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        f'<path d="{icon_path}"/></svg></div><h4>{title}</h4><p>{text}</p></div>'
+    )
+
+
 with overview_tab:
-    if not has_uploads or all_transactions.empty:
-        st.info("Upload at least one statement to view dashboard metrics.")
+    if not has_data:
+        # Welcome screen: what the app does, before anything is uploaded.
+        st.markdown(
+            '<div class="feature-grid">'
+            + _feature("M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6", "Reads any bank",
+                       "Upload a statement from any bank. Transactions are found automatically, with nothing to set up.")
+            + _feature("M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", "Checks the math",
+                       "Every running balance is verified, and each account gets its own bank reconciliation.")
+            + _feature("M4 21V4M4 4h12l-2 4 2 4H4", "Spots red flags",
+                       "Large, round-dollar, duplicate and out-of-sequence items are flagged for a closer look.")
+            + _feature("M12 3v12M7 10l5 5 5-5M5 21h14", "Exports workpapers",
+                       "Download a formatted Excel workpaper and summary financial statements for the case file.")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
     else:
         # Summary KPI cards: volume, risk, and cash flow totals.
-        k1, k2, k3 = st.columns(3)
-        k1.metric("Statements", statement_count)
-        k2.metric("Transactions", tx_count)
-        k3.metric("Avg Risk", f"{avg_risk_score:.1f}/100")
-        k4, k5, k6 = st.columns(3)
-        k4.metric("Total Debits", f"${total_debits:,.2f}")
-        k5.metric("Total Credits", f"${total_credits:,.2f}")
-        k6.metric("Net Flow", f"${net_flow:,.2f}")
-        c1, c2 = st.columns(2)
-        category_chart = all_transactions["txn_category"].value_counts().rename_axis("category").reset_index(name="count")
-        category_chart["category"] = category_chart["category"].map(_display_category_name)
-        c1.markdown("#### Categories")
-        c1.bar_chart(category_chart.set_index("category"), color=NAVY)
-        # Fixed order so low/medium/high always appear even when a level has zero rows.
-        risk_chart = all_transactions["risk_level"].value_counts().reindex(["high", "medium", "low"], fill_value=0).rename_axis("risk").to_frame("count")
-        c2.markdown("#### Risk Levels")
-        c2.bar_chart(risk_chart, color=GOLD)
+        _kpis(
+            [
+                ("Statements", f"{statement_count}", f"{tx_count} transactions", ""),
+                ("Money in", _money(total_credits), "Deposits and other credits", "green"),
+                ("Money out", _money(total_debits), "Checks, withdrawals and debits", "gold"),
+                ("Net change", _money(net_flow), "Money in minus money out", ""),
+                ("Higher-risk items", f"{high_risk_count + medium_risk_count}", f"{high_risk_count} high · {medium_risk_count} medium", "red"),
+            ]
+        )
+        c1, c2 = st.columns([1.5, 1])
+        with c1:
+            _section("Where the money went", "Number of transactions by category")
+            category_chart = all_transactions["txn_category"].map(_display_category_name).value_counts().rename_axis("Category").reset_index(name="Transactions")
+            st.altair_chart(
+                alt.Chart(category_chart)
+                .mark_bar(color=NAVY, cornerRadiusEnd=4, height=18)
+                .encode(
+                    x=alt.X("Transactions:Q", title=None, axis=alt.Axis(grid=False, tickMinStep=1)),
+                    y=alt.Y("Category:N", sort="-x", title=None),
+                    tooltip=["Category", "Transactions"],
+                )
+                .properties(height=max(160, 34 * len(category_chart)))
+                .configure_view(stroke=None),
+                use_container_width=True,
+            )
+        with c2:
+            _section("Risk levels", "Every transaction is scored 0 to 100")
+            risk_chart = (
+                all_transactions["risk_level"].str.title().value_counts().reindex(["High", "Medium", "Low"], fill_value=0)
+                .rename_axis("Risk").reset_index(name="Transactions")
+            )
+            st.altair_chart(
+                alt.Chart(risk_chart)
+                .mark_arc(innerRadius=58, cornerRadius=3)
+                .encode(
+                    theta="Transactions:Q",
+                    color=alt.Color(
+                        "Risk:N",
+                        scale=alt.Scale(domain=list(RISK_COLORS), range=list(RISK_COLORS.values())),
+                        legend=alt.Legend(orient="bottom", title=None),
+                    ),
+                    tooltip=["Risk", "Transactions"],
+                )
+                .properties(height=240)
+                .configure_view(stroke=None),
+                use_container_width=True,
+            )
 
 with transactions_tab:
-    if not has_uploads or all_transactions.empty:
-        st.info("Upload statements to review transactions.")
+    if not has_data:
+        st.info(EMPTY_NOTE)
     else:
         f1, f2, f3 = st.columns([1.2, 1.1, 1.3])
         statement_options = sorted(all_transactions["statement_id"].dropna().unique().tolist())
         selected_statements = f1.multiselect("Statement", statement_options, default=statement_options)
-        selected_risks = f2.multiselect("Risk Level", ["high", "medium", "low"], default=["high", "medium", "low"])
-        search_term = f3.text_input("Search description", placeholder="ATM, CHECK, DEPOSIT")
+        selected_risks = f2.multiselect("Risk level", ["high", "medium", "low"], default=["high", "medium", "low"], format_func=str.title)
+        search_term = f3.text_input("Search descriptions", placeholder="ATM, check, deposit…")
         filtered = all_transactions.copy()
         if selected_statements:
             filtered = filtered[filtered["statement_id"].isin(selected_statements)]
@@ -337,60 +555,130 @@ with transactions_tab:
             filtered = filtered[filtered["risk_level"].isin(selected_risks)]
         if search_term:
             filtered = filtered[filtered["description"].str.contains(search_term, case=False, na=False)]
-        # Highest-risk transactions first, then chronological within risk tier.
-        filtered = filtered.sort_values(["risk_score", "txn_date"], ascending=[False, True])
+        # Chronological, like the statement itself.
+        filtered = filtered.sort_values(["statement_id", "txn_date", "source_page", "source_line"])
         filtered["txn_category"] = filtered["txn_category"].map(_display_category_name)
         filtered["risk_badge"] = filtered["risk_level"].map(_risk_badge)
+        st.caption(f"Showing {len(filtered)} of {tx_count} transactions")
         st.dataframe(
-            filtered[["txn_date", "statement_id", "description", "txn_category", "debit", "credit", "risk_score", "risk_badge"]],
+            _money_cells(filtered, ["debit", "credit", "running_balance"])[
+                ["txn_date", "statement_id", "description", "txn_category", "debit", "credit", "running_balance", "risk_badge"]
+            ],
+            column_config={
+                "txn_date": DATE_COLUMN,
+                "statement_id": "Statement",
+                "description": st.column_config.TextColumn("Description", width="medium"),
+                "txn_category": "Category",
+                "debit": _money_text_column("Money out"),
+                "credit": _money_text_column("Money in"),
+                "running_balance": _money_text_column("Balance"),
+                "risk_badge": "Risk",
+            },
             use_container_width=True,
             hide_index=True,
-            height=460,
+            height=480,
         )
 
 with risk_tab:
-    if not has_uploads or all_transactions.empty:
-        st.info("Upload statements to view risk and flags.")
+    if not has_data:
+        st.info(EMPTY_NOTE)
     else:
-        r1, r2, r3 = st.columns(3)
-        r1.metric("High Risk", high_risk_count)
-        r2.metric("Medium Risk", medium_risk_count)
-        r3.metric("Flags", flag_count)
-        high_risk = all_transactions[all_transactions["risk_level"].isin(["high", "medium"])].copy()
+        _kpis(
+            [
+                ("High risk", f"{high_risk_count}", "Look at these first", "red"),
+                ("Medium risk", f"{medium_risk_count}", "Worth a second look", "gold"),
+                ("Flags raised", f"{flag_count}", "Duplicates, gaps, large items and more", ""),
+            ]
+        )
+        _section("Highest-risk transactions", "Sorted by risk score; the reasons column explains each score")
+        high_risk = all_transactions[all_transactions["risk_level"].isin(["high", "medium"])].sort_values("risk_score", ascending=False).copy()
         high_risk["risk_badge"] = high_risk["risk_level"].map(_risk_badge)
-        st.dataframe(high_risk[["txn_date", "description", "amount", "risk_score", "risk_badge", "risk_reasons"]].head(50), use_container_width=True, hide_index=True)
-        if not all_flags.empty:
-            flags_view = all_flags.copy()
-            flags_view["severity_badge"] = flags_view["severity"].map(_severity_badge)
-            st.dataframe(flags_view[["flag_type", "severity_badge", "message", "txn_date", "amount"]], use_container_width=True, hide_index=True)
-
-with reconciliation_tab:
-    if not has_uploads or all_transactions.empty:
-        st.info("Upload statements to run reconciliation.")
-    else:
-        rec = reconciliation_df.copy()
-        rec["status_badge"] = rec["status"].map(lambda s: "🟢 Reconciled" if s == "Reconciled" else ("🔴 Variance" if s == "Variance" else "🟠 Needs Review"))
         st.dataframe(
-            rec[["statement_id", "account_number", "beginning_balance", "total_credits", "total_debits", "expected_ending_balance", "ending_balance", "reconciliation_difference", "status_badge", "notes"]],
+            high_risk[["txn_date", "description", "amount", "risk_score", "risk_badge", "risk_reasons"]].head(50),
+            column_config={
+                "txn_date": DATE_COLUMN,
+                "description": st.column_config.TextColumn("Description", width="medium"),
+                "amount": st.column_config.NumberColumn("Amount", **MONEY_COLUMN),
+                "risk_score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+                "risk_badge": "Risk",
+                "risk_reasons": st.column_config.TextColumn("Why it was flagged", width="large"),
+            },
             use_container_width=True,
             hide_index=True,
-            height=360,
         )
+        if not all_flags.empty:
+            _section("All flags", "Every rule that fired, by severity")
+            flags_view = all_flags.copy()
+            flags_view["severity_badge"] = flags_view["severity"].map(_severity_badge)
+            flags_view["flag_type"] = flags_view["flag_type"].str.replace("_", " ").str.capitalize()
+            st.dataframe(
+                flags_view[["severity_badge", "flag_type", "message", "txn_date", "amount"]],
+                column_config={
+                    "severity_badge": "Severity",
+                    "flag_type": "Flag",
+                    "message": st.column_config.TextColumn("Details", width="large"),
+                    "txn_date": "Date",
+                    "amount": st.column_config.NumberColumn("Amount", **MONEY_COLUMN),
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
+
+with reconciliation_tab:
+    if not has_data:
+        st.info(EMPTY_NOTE)
+    else:
+        _section("Bank reconciliation", "Beginning balance + money in − money out should equal the statement's ending balance")
+        for _, rec in reconciliation_df.iterrows():
+            status_class = {"Reconciled": "ok", "Variance": "bad"}.get(rec["status"], "warn")
+            account = f" · Account {rec['account_number']}" if pd.notna(rec["account_number"]) else ""
+            if rec["beginning_balance"] is None or pd.isna(rec["beginning_balance"]):
+                math = (
+                    f'<span>Money in</span><span>{_money(rec["total_credits"])}</span>'
+                    f'<span>Money out</span><span>{_money(rec["total_debits"])}</span>'
+                )
+            else:
+                math = (
+                    f'<span>Beginning balance</span><span>{_money(rec["beginning_balance"])}</span>'
+                    f'<span>+ Money in</span><span>{_money(rec["total_credits"])}</span>'
+                    f'<span>− Money out</span><span>{_money(rec["total_debits"])}</span>'
+                    f'<span class="total">= Expected ending balance</span><span class="total">{_money(rec["expected_ending_balance"])}</span>'
+                    f'<span>Ending balance on statement</span><span>{_money(rec["ending_balance"])}</span>'
+                    f'<span class="total">Difference</span><span class="total">{_money(rec["reconciliation_difference"])}</span>'
+                )
+            st.markdown(
+                f'<div class="recon-card"><div class="recon-head"><span class="title">{rec["statement_id"]}{account}</span>'
+                f'<span class="status {status_class}">{rec["status"]}</span></div>'
+                f'<div class="recon-math">{math}</div><div class="recon-note">{rec["notes"]}</div></div>',
+                unsafe_allow_html=True,
+            )
 
 with export_tab:
-    if not has_uploads or all_transactions.empty:
-        st.info("Upload statements to export workbooks.")
+    if not has_data:
+        st.info(EMPTY_NOTE)
     else:
         # Build Excel byte streams for forensic workpaper and summarized financial statements.
         workpaper_bytes = build_workpaper(all_transactions, all_flags, all_raw if include_raw_text else pd.DataFrame(), datetime.now())
         financial_bytes = build_financial_statements(all_transactions, reconciliation_df, datetime.now())
         d1, d2 = st.columns(2)
-        d1.download_button("Download Forensic Workpaper (.xlsx)", data=BytesIO(workpaper_bytes).getvalue(), file_name=f"forensic_workpaper_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
-        d2.download_button("Download Financial Statements (.xlsx)", data=BytesIO(financial_bytes).getvalue(), file_name=f"financial_statements_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with d1:
+            st.markdown(
+                '<div class="download-card"><h4>Forensic workpaper</h4><p>Every transaction with its category, risk score '
+                "and reasons, plus a summary and a review list of flagged items.</p></div>",
+                unsafe_allow_html=True,
+            )
+            st.download_button("Download workpaper (.xlsx)", data=BytesIO(workpaper_bytes).getvalue(), file_name=f"forensic_workpaper_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", icon=":material/download:", use_container_width=True)
+        with d2:
+            st.markdown(
+                '<div class="download-card"><h4>Financial statements</h4><p>A management summary, statement of activities '
+                "by month, and cash position from the bank reconciliation.</p></div>",
+                unsafe_allow_html=True,
+            )
+            st.download_button("Download financial statements (.xlsx)", data=BytesIO(financial_bytes).getvalue(), file_name=f"financial_statements_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:", use_container_width=True)
 
 with template_tab:
     # One-click onboarding: upload a statement from a new bank, check what was read, save it.
-    st.markdown("#### Add a new bank")
+    _section("Add a new bank", "")
     st.markdown(
         '<div class="section-card">Most statements are read automatically, even from banks the app has never seen. '
         "To save a bank so it's always recognized, upload one of its statements, check the preview, and click "
@@ -427,9 +715,14 @@ with template_tab:
                 m3.metric("Balances that check out", "n/a", help="This statement has no running balance column.")
             st.markdown(f"**{confidence_text}**")
             st.dataframe(
-                analysis.preview.head(15).rename(
-                    columns={"txn_date": "Date", "description": "Description", "debit": "Debit", "credit": "Credit", "running_balance": "Balance"}
-                ),
+                _money_cells(analysis.preview.head(15), ["debit", "credit", "running_balance"]),
+                column_config={
+                    "txn_date": DATE_COLUMN,
+                    "description": st.column_config.TextColumn("Description", width="large"),
+                    "debit": _money_text_column("Money out"),
+                    "credit": _money_text_column("Money in"),
+                    "running_balance": _money_text_column("Balance"),
+                },
                 use_container_width=True,
                 hide_index=True,
             )
@@ -456,7 +749,7 @@ with template_tab:
                         st.error(msg)
 
     templates = load_templates()
-    st.markdown("##### Saved banks")
+    _section("Saved banks")
     if templates:
         st.dataframe(
             pd.DataFrame(
