@@ -22,7 +22,7 @@ import streamlit as st
 
 import dashboard
 from auto_parser import CREDIT_WORDS
-from bank_directory import BANKS, bank_details, directory_table
+from bank_directory import BANKS, directory_table
 
 BANK_NAMES = {bank["name"] for bank in BANKS}
 # Shown on the welcome screen; the rest are behind "See all".
@@ -116,14 +116,8 @@ st.markdown(
     .banks-panel h4 {{margin: 0 0 0.25rem 0; font-size: 0.98rem; color: {NAVY};}}
     .banks-panel p {{margin: 0 0 0.6rem 0; font-size: 0.86rem; color: #5B6575;}}
     .bank-chips {{display: flex; flex-wrap: wrap; gap: 0.4rem;}}
-    .bank-chip {{position: relative; font-size: 0.8rem; font-weight: 500; color: {NAVY}; background: #FFFFFF; border: 1px solid #D5DCE8;
-                 border-radius: 999px; padding: 0.22rem 0.7rem; cursor: help; outline: none;}}
-    .bank-chip:hover, .bank-chip:focus {{border-color: {BLUE}; color: {BLUE};}}
-    .bank-tip {{display: none; position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; width: 260px;
-                background: {NAVY}; color: #FFFFFF; font-weight: 400; font-size: 0.78rem; line-height: 1.45;
-                border-radius: 8px; padding: 0.6rem 0.75rem; box-shadow: 0 8px 20px rgba(29,40,68,0.25);}}
-    .bank-tip b {{color: #FFFFFF;}}
-    .bank-chip:hover .bank-tip, .bank-chip:focus .bank-tip {{display: block;}}
+    .bank-chip {{font-size: 0.8rem; font-weight: 500; color: {NAVY}; background: #FFFFFF; border: 1px solid #D5DCE8;
+                 border-radius: 999px; padding: 0.22rem 0.7rem;}}
     .bank-chip.more {{background: {NAVY}; color: #FFFFFF; border-color: {NAVY};}}
 
     .kpi-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 0.6rem 0 1rem 0;}}
@@ -546,7 +540,7 @@ if has_uploads:
             if layout.startswith("Auto-detected: ") and layout[len("Auto-detected: "):] in BANK_NAMES:
                 layout = f"<b>Recognized: {layout[len('Auto-detected: '):]}</b>"
             elif layout.startswith("Auto-detected"):
-                layout = "Read automatically (bank not on the built-in list)"
+                layout = "Read automatically"
             statements = result.transactions["statement_id"].nunique()
             found = f"{statements} statements · " if statements > 1 else ""
             remarks = "".join(f" · {note}" for note in result.notes if "black boxes" not in note.lower())
@@ -604,7 +598,7 @@ with overview_tab:
             + _feature("M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6", "Reads any bank",
                        "Upload a statement from any bank. Transactions are found automatically, with nothing to set up.")
             + _feature("M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", "Checks the math",
-                       "Every running balance is verified, and each account gets its own bank reconciliation.")
+                       "Each account is reconciled against the statement's own balances or printed totals, so you can see if anything was misread.")
             + _feature("M4 21V4M4 4h12l-2 4 2 4H4", "Spots red flags",
                        "Large, round-dollar, duplicate and out-of-sequence items are flagged for a closer look.")
             + _feature("M12 3v12M7 10l5 5 5-5M5 21h14", "Exports workpapers",
@@ -613,19 +607,17 @@ with overview_tab:
             unsafe_allow_html=True,
         )
         # Make the built-in bank list visible before anyone uploads anything.
-        chips = "".join(
-            f'<span class="bank-chip" tabindex="0">{name}<span class="bank-tip">{bank_details(name)}</span></span>'
-            for name in FEATURED_BANKS
-        )
+        chips = "".join(f'<span class="bank-chip">{name}</span>' for name in FEATURED_BANKS)
         st.markdown(
-            f'<div class="banks-panel"><h4>Banks it recognizes</h4>'
-            f"<p>{len(BANKS)} banks, credit unions and card issuers are recognized by name. Hover over (or tap) a bank to see "
-            f"which statements the app converts for it. Statements from any other bank are still read automatically.</p>"
+            f'<div class="banks-panel"><h4>Works with any bank</h4>'
+            f"<p>Upload statements from any bank or credit union. These {len(BANKS)} are also labelled by name "
+            f"when the name is printed on the statement. Either way, the Bank Reconciliation tab checks that "
+            f"every transaction was read correctly.</p>"
             f"<div class=\"bank-chips\">{chips}"
             f'<span class="bank-chip more">+ {len(BANKS) - len(FEATURED_BANKS)} more</span></div></div>',
             unsafe_allow_html=True,
         )
-        with st.expander(f"See all {len(BANKS)} recognized banks"):
+        with st.expander(f"See all {len(BANKS)} banks labelled by name"):
             st.dataframe(pd.DataFrame(directory_table()), width="stretch", hide_index=True, height=360)
     else:
         # Summary KPI cards: volume, risk, and cash flow totals.
@@ -917,13 +909,12 @@ with template_tab:
     # One-click onboarding: upload a statement from a new bank, check what was read, save it.
     _section("Add a new bank", "")
     st.markdown(
-        f'<div class="section-card">Statements from <b>any bank</b> are read automatically, and {len(BANKS)} major banks, '
-        "credit unions and card issuers are recognized by name with nothing to set up (list below). "
-        "To have another bank recognized by name, upload one of its statements, check the preview, and click "
-        "<b>Save this bank</b>.</div>",
+        '<div class="section-card">You don\'t need to add a bank to use it: statements from any bank are read automatically. '
+        "Saving a bank here only labels its statements by name (and lets you check what the app reads first). "
+        "Upload one of its statements, check the preview, and click <b>Save this bank</b>.</div>",
         unsafe_allow_html=True,
     )
-    with st.expander(f"Banks recognized automatically ({len(BANKS)})"):
+    with st.expander(f"Banks already labelled by name ({len(BANKS)})"):
         st.dataframe(pd.DataFrame(directory_table()), width="stretch", hide_index=True, height=360)
     sample_upload = st.file_uploader("Upload one statement from the bank", type=["pdf"], key="template_sample_upload")
     if sample_upload is not None:

@@ -40,18 +40,20 @@ It opens at http://localhost:8501. `.streamlit/config.toml` keeps it private: on
 
 ## Banks it knows
 
-Statements from any bank are read without setup. The app also recognizes 57 major US banks, credit unions and card issuers by name (Chase, Bank of America, Wells Fargo, Citi, Capital One, American Express, Navy Federal and others; the full list is in the **Add a New Bank** tab and `bank_directory.py`). It handles the common layouts these banks use:
+Statements from any bank are read the same way, with no setup. 57 major US banks, credit unions and card issuers (Chase, Bank of America, Wells Fargo, Citi, Capital One, American Express, Navy Federal and others; full list in `bank_directory.py`) are also labelled by name when the name is printed as text near the top of the statement. That label is the only thing the list does.
+
+The reader handles these common layouts:
 
 - money in and money out in separate columns with no minus signs (read from the column each amount sits under);
 - a balance printed only on the last line of each day (each day's lines are checked against it);
 - section headings such as "Deposits and other additions" and "Withdrawals and other subtractions", with section totals;
 - credit card statements with payments printed as negatives.
 
-These layouts were tested with made-up statements modelled on each format, not with real statements from those banks. The reconciliation tab shows a variance if a statement wasn't read correctly.
+These layouts were tested with made-up statements, not with real statements from those banks; the real statements tested so far are a scanned, redacted credit-union statement and the two samples in this folder. The Bank Reconciliation tab shows a variance if a statement wasn't read correctly.
 
 ## Adding a new bank
 
-Most statements are read automatically. To make a bank's statements always recognized, open the **Add a New Bank** tab, upload one statement, check the preview, and click **Save this bank**. Nothing else to fill in.
+You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** tab only labels its statements by name: upload one statement, check the preview, and click **Save this bank**. If a statement doesn't reconcile, saving the bank won't fix it; that needs a change to the reader.
 
 ## Excel workpaper tabs
 - `Summary`
@@ -82,4 +84,4 @@ Click **Try it with sample statements** under the upload box. It loads the two s
 ## Branding
 
 - **Logo:** save the organization's logo as `assets/logo.png` (or `logo.svg` / `logo.jpg`). Both versions pick it up automatically.
-- **Name and colors:** set at the top of `app.py` (`APP_NAME`, `ORG_NAME`, `NAVY`, `GOLD`), in `.streamlit/config.toml`, and in `index.html`.
+- **Name and colors:** set at the top of `app.py` (`APP_NAME`, `ORG_NAME`, `NAVY`, `BLUE`, `TAUPE`, `LIGHT`), in `.streamlit/config.toml`, and in `index.html`.
