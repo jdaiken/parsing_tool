@@ -8,6 +8,7 @@ dashboards, export Excel workpapers, and manage custom bank-format templates.
 from __future__ import annotations
 
 import base64
+import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -223,6 +224,35 @@ def _money_text_column(label: str):
 
 
 
+def _templates_key() -> str:
+    """Saved banks change how statements are read, so they are part of the cache key."""
+    return json.dumps(load_templates(), sort_keys=True)
+
+
+@st.cache_data(show_spinner=False, max_entries=50)
+def _parse_cached(name: str, data: bytes, threshold: float, templates_key: str, _report=None) -> ParseResult:
+    """Parse once per file and settings; scanned statements take a while to OCR."""
+    return parse_statement(name, data, threshold, progress=_report)
+
+
+def _parse_with_progress(name: str, data: bytes, threshold: float) -> ParseResult:
+    """Parse a statement, showing OCR progress (only the first time; results are cached)."""
+    progress = st.empty()
+
+    def report(done: int, total: int) -> None:
+        progress.progress(done / total, text=f"Reading scanned pages of {name}: page {done} of {total}")
+
+    try:
+        return _parse_cached(name, data, threshold, _templates_key(), _report=report)
+    finally:
+        progress.empty()
+
+
+@st.cache_data(show_spinner=False, max_entries=20)
+def _analyze_cached(name: str, data: bytes, templates_key: str):
+    return analyze_statement(name, data)
+
+
 @dataclass
 class _BundledFile:
     """A sample PDF shipped with the app, shaped like a Streamlit upload."""
@@ -244,6 +274,8 @@ def _display_category_name(cat: str) -> str:
         "fee_charge": "Fee / Service Charge",
         "ach_transfer": "ACH / Transfer",
         "loan_payment": "Loan Payment",
+        "card_payment": "Card Payment",
+        "card_credit": "Card Credit / Refund",
         "other_credit": "Other Credit",
         "other_debit": "Other Debit",
     }
@@ -260,30 +292,45 @@ def _severity_badge(level: str) -> str:
     return {"high": "🔴 High", "medium": "🟠 Medium", "low": "🟢 Low"}.get(str(level).lower(), "⚪ Unrated")
 
 
+RECON_COLUMNS = [
+    "statement_id",
+    "account_number",
+    "method",
+    "statement_kind",
+    "beginning_balance",
+    "total_credits",
+    "total_debits",
+    "expected_ending_balance",
+    "ending_balance",
+    "reconciliation_difference",
+    "printed_net",
+    "printed_items",
+    "items",
+    "status",
+    "notes",
+]
+
+
+def _first_number(frame: pd.DataFrame, column: str):
+    values = pd.to_numeric(frame.get(column, pd.Series(dtype=float)), errors="coerce").dropna()
+    return float(values.iloc[0]) if not values.empty else None
+
+
 def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
     """
-    Build per-statement reconciliation rows.
+    Build one reconciliation row per statement and account, using the best evidence available:
 
-    For each statement, sums credits/debits and compares the implied ending
-    balance (beginning + credits - debits) to the last running balance on the
-    statement. A difference within $0.01 is treated as reconciled.
+    1. running balance: beginning + credits - debits must equal the last running balance;
+    2. printed control totals ("10 Total Deposits : $8,337.98"), used when balances are
+       missing or redacted: the net change and item count must agree;
+    3. the statement's printed opening and closing balances (previous/new balance on a
+       credit card) when the statement holds a single account.
+    A difference within $0.01 is treated as reconciled.
     """
     if transactions.empty:
-        return pd.DataFrame(
-            columns=[
-                "statement_id",
-                "account_number",
-                "beginning_balance",
-                "total_credits",
-                "total_debits",
-                "expected_ending_balance",
-                "ending_balance",
-                "reconciliation_difference",
-                "status",
-                "notes",
-            ]
-        )
+        return pd.DataFrame(columns=RECON_COLUMNS)
     rows = []
+    accounts_per_statement = transactions.groupby("statement_id", dropna=False)["account_number"].nunique(dropna=False)
     # One row per account: a single PDF can hold several accounts (e.g. checking plus a credit line).
     for (statement_id, account_number), grp in transactions.groupby(["statement_id", "account_number"], dropna=False):
         # Preserve statement order: date, then PDF page/line position.
@@ -291,12 +338,28 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
         credits = float(pd.to_numeric(ordered["credit"], errors="coerce").fillna(0).sum())
         debits = float(pd.to_numeric(ordered["debit"], errors="coerce").fillna(0).sum())
         running = pd.to_numeric(ordered.get("running_balance"), errors="coerce").dropna()
-        beginning_balance = None
-        ending_balance = None
-        expected_ending = None
-        difference = None
-        status = "Needs Review"
-        notes = "No running balance found; manual reconciliation required."
+        kind = str(ordered["statement_kind"].iloc[0]) if "statement_kind" in ordered and pd.notna(ordered["statement_kind"].iloc[0]) else "bank"
+        row = {
+            "statement_id": statement_id,
+            "account_number": account_number,
+            "method": None,
+            "statement_kind": kind,
+            "beginning_balance": None,
+            "total_credits": credits,
+            "total_debits": debits,
+            "expected_ending_balance": None,
+            "ending_balance": None,
+            "reconciliation_difference": None,
+            "printed_net": None,
+            "printed_items": None,
+            "items": len(ordered),
+            "status": "Needs Review",
+            "notes": "No running balance or printed totals found; manual reconciliation required.",
+        }
+        printed_credits = _first_number(ordered, "control_credit_total")
+        printed_debits = _first_number(ordered, "control_debit_total")
+        opening = _first_number(ordered, "statement_opening_balance")
+        closing = _first_number(ordered, "statement_closing_balance")
         if not running.empty:
             # Derive opening balance by reversing the first transaction from its running balance.
             first_idx = running.index[0]
@@ -305,39 +368,48 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
             first_debit_raw = pd.to_numeric(first_row.get("debit"), errors="coerce")
             first_credit = 0.0 if pd.isna(first_credit_raw) else float(first_credit_raw)
             first_debit = 0.0 if pd.isna(first_debit_raw) else float(first_debit_raw)
-            beginning_balance = float(running.iloc[0]) - first_credit + first_debit
-            ending_balance = float(running.iloc[-1])
-            expected_ending = beginning_balance + credits - debits
-            difference = ending_balance - expected_ending
-            if abs(difference) <= 0.01:
-                status = "Reconciled"
-                notes = "Expected ending balance agrees to statement running balance."
+            beginning = float(running.iloc[0]) - first_credit + first_debit
+            row.update(method="running_balance", beginning_balance=beginning, ending_balance=float(running.iloc[-1]))
+            row["expected_ending_balance"] = beginning + credits - debits
+            row["reconciliation_difference"] = row["ending_balance"] - row["expected_ending_balance"]
+            if abs(row["reconciliation_difference"]) <= 0.01:
+                row.update(status="Reconciled", notes="Expected ending balance agrees to statement running balance.")
             else:
-                status = "Variance"
-                notes = "Expected ending balance differs from statement running balance."
+                row.update(status="Variance", notes="Expected ending balance differs from statement running balance.")
                 # Checks listed only in a check summary never touch the register's running balance.
                 unregistered_checks = ordered[(ordered["transaction_type"] == "check") & ordered["running_balance"].isna()]
                 unregistered_total = float(pd.to_numeric(unregistered_checks["debit"], errors="coerce").fillna(0).sum())
-                if unregistered_total and abs(difference - unregistered_total) <= 0.01:
-                    notes = (
+                if unregistered_total and abs(row["reconciliation_difference"] - unregistered_total) <= 0.01:
+                    row["notes"] = (
                         f"The difference equals the {len(unregistered_checks)} checks (${unregistered_total:,.2f}) listed in the "
                         "statement's check summary that don't appear in its transaction register. Trace these checks."
                     )
-        rows.append(
-            {
-                "statement_id": statement_id,
-                "account_number": account_number,
-                "beginning_balance": beginning_balance,
-                "total_credits": credits,
-                "total_debits": debits,
-                "expected_ending_balance": expected_ending,
-                "ending_balance": ending_balance,
-                "reconciliation_difference": difference,
-                "status": status,
-                "notes": notes,
-            }
-        )
-    return pd.DataFrame(rows).sort_values(["statement_id", "account_number"]).reset_index(drop=True)
+        elif printed_credits is not None or printed_debits is not None:
+            # Banks differ on where reversals belong (a negative deposit vs. a withdrawal), so compare
+            # the net change and the number of items rather than each side separately.
+            printed_net = (printed_credits or 0.0) - (printed_debits or 0.0)
+            counts = [_first_number(ordered, "control_credit_count"), _first_number(ordered, "control_debit_count")]
+            printed_items = int(sum(c for c in counts if c is not None)) if any(c is not None for c in counts) else None
+            difference = (credits - debits) - printed_net
+            row.update(method="control_totals", printed_net=printed_net, printed_items=printed_items, reconciliation_difference=difference)
+            items_ok = printed_items is None or printed_items == len(ordered)
+            if abs(difference) <= 0.01 and items_ok:
+                row.update(status="Reconciled", notes="Every transaction was read: the totals and item count agree with the totals printed on the statement.")
+            elif abs(difference) <= 0.01:
+                row.update(status="Variance", notes=f"Totals agree but the statement lists {printed_items} items and {len(ordered)} were read.")
+            else:
+                row.update(status="Variance", notes="The transactions read don't add up to the totals printed on the statement; some may be missing or misread.")
+        elif opening is not None and closing is not None and accounts_per_statement.get(statement_id, 1) == 1:
+            # A card balance rises with charges and falls with payments; a bank balance the other way round.
+            expected = opening + debits - credits if kind == "credit_card" else opening + credits - debits
+            row.update(method="summary_balance", beginning_balance=opening, ending_balance=closing, expected_ending_balance=expected)
+            row["reconciliation_difference"] = closing - expected
+            if abs(row["reconciliation_difference"]) <= 0.01:
+                row.update(status="Reconciled", notes="Opening balance and the transactions read agree to the closing balance printed on the statement.")
+            else:
+                row.update(status="Variance", notes="The transactions read don't account for the change between the printed opening and closing balances.")
+        rows.append(row)
+    return pd.DataFrame(rows, columns=RECON_COLUMNS).sort_values(["statement_id", "account_number"]).reset_index(drop=True)
 
 
 # --- Sidebar: global options that affect parsing and export ---
@@ -358,7 +430,10 @@ with st.sidebar:
 
 # --- File upload and parsing ---
 
-_section("Upload statements", "Drop in one or more PDFs downloaded from online banking. Scanned paper statements can't be read.")
+_section(
+    "Upload statements",
+    "Drop in one or more statement PDFs: downloaded from online banking, scanned, or redacted. Scans take a few seconds per page.",
+)
 uploads = st.file_uploader(
     "Upload bank statement PDFs",
     type=["pdf"],
@@ -403,6 +478,14 @@ tx_columns = [
     "risk_score",
     "risk_level",
     "risk_reasons",
+    "redacted",
+    "statement_kind",
+    "statement_opening_balance",
+    "statement_closing_balance",
+    "control_credit_total",
+    "control_credit_count",
+    "control_debit_total",
+    "control_debit_count",
 ]
 flag_columns = ["flag_type", "severity", "message", "txn_date", "amount", "description", "check_number"]
 
@@ -413,29 +496,43 @@ results: List[ParseResult] = []
 
 if has_uploads:
     file_rows: List[str] = []
+    warnings: List[str] = []
     for statement_file in statement_files:
         try:
             # Parse each PDF into transactions, risk flags, and optional raw text.
-            result = parse_statement(statement_file.name, statement_file.getvalue(), large_txn_threshold)
+            result = _parse_with_progress(statement_file.name, statement_file.getvalue(), large_txn_threshold)
         except Exception as exc:  # pragma: no cover
             file_rows.append(f'<div class="file-row"><span class="status bad">Error</span>{statement_file.name}<span class="meta">{exc}</span></div>')
             continue
         results.append(result)
         # Tell the user, file by file, how each statement was read.
         if result.transactions.empty:
-            if not "".join(result.raw_text.get("text", pd.Series(dtype=str)).fillna("")).strip():
-                note = "No readable text: looks like a scanned image. Use the bank's downloaded PDF."
+            if any("couldn't be read" in n for n in result.notes):
+                note = (
+                    "Scanned statement. Reading scans needs the version that runs on your computer "
+                    "(see the README); this browser version reads downloaded PDFs only."
+                )
+            elif not "".join(result.raw_text.get("text", pd.Series(dtype=str)).fillna("")).strip():
+                note = "No readable text in this PDF."
             else:
                 note = "No transactions found. Try it in the Add a New Bank tab."
             file_rows.append(f'<div class="file-row"><span class="status warn">Check</span>{statement_file.name}<span class="meta">{note}</span></div>')
         else:
             layout = str(result.transactions["bank_format"].iloc[0])
             layout = BUILT_IN_FORMAT_NAMES.get(layout, layout.replace("auto:", "Auto-detected: ").replace("custom:", "Saved bank: "))
+            layout = layout.replace("Auto-detected: unknown", "Auto-detected")
+            statements = result.transactions["statement_id"].nunique()
+            found = f"{statements} statements · " if statements > 1 else ""
+            remarks = "".join(f" · {note}" for note in result.notes if "black boxes" not in note.lower())
             file_rows.append(
                 f'<div class="file-row"><span class="status ok">Read</span>{statement_file.name}'
-                f'<span class="meta">{len(result.transactions)} transactions · {layout}</span></div>'
+                f'<span class="meta">{found}{len(result.transactions)} transactions · {layout}{remarks}</span></div>'
             )
+        # Redaction that didn't remove the text is a privacy problem worth a prominent warning.
+        warnings += [f"**{statement_file.name}:** {note}" for note in result.notes if "black boxes" in note.lower()]
     st.markdown(f'<div class="file-list">{"".join(file_rows)}</div>', unsafe_allow_html=True)
+    for warning in warnings:
+        st.warning(warning, icon=":material/visibility_off:")
     if results:
         # Merge parsed output from all successfully processed statements.
         all_transactions = pd.concat([r.transactions for r in results], ignore_index=True)
@@ -447,7 +544,7 @@ if has_uploads:
 total_debits = float(pd.to_numeric(all_transactions.get("debit"), errors="coerce").fillna(0).sum()) if not all_transactions.empty else 0.0
 total_credits = float(pd.to_numeric(all_transactions.get("credit"), errors="coerce").fillna(0).sum()) if not all_transactions.empty else 0.0
 net_flow = total_credits - total_debits
-statement_count = len(results)
+statement_count = int(all_transactions["statement_id"].nunique()) if not all_transactions.empty else 0
 tx_count = len(all_transactions)
 high_risk_count = int((all_transactions.get("risk_level") == "high").sum()) if not all_transactions.empty else 0
 medium_risk_count = int((all_transactions.get("risk_level") == "medium").sum()) if not all_transactions.empty else 0
@@ -628,23 +725,41 @@ with reconciliation_tab:
     if not has_data:
         st.info(EMPTY_NOTE)
     else:
-        _section("Bank reconciliation", "Beginning balance + money in − money out should equal the statement's ending balance")
+        _section(
+            "Bank reconciliation",
+            "Checks that every transaction was read: against the running balance, the totals printed on the statement, or its opening and closing balances",
+        )
         for _, rec in reconciliation_df.iterrows():
             status_class = {"Reconciled": "ok", "Variance": "bad"}.get(rec["status"], "warn")
-            account = f" · Account {rec['account_number']}" if pd.notna(rec["account_number"]) else ""
-            if rec["beginning_balance"] is None or pd.isna(rec["beginning_balance"]):
+            account = f" · {rec['account_number']}" if pd.notna(rec["account_number"]) else ""
+            card = rec["statement_kind"] == "credit_card"
+            money_in, money_out = ("Payments and credits", "Charges") if card else ("Money in", "Money out")
+            if rec["method"] == "control_totals":
+                printed_items = f" ({int(rec['printed_items'])} items)" if pd.notna(rec["printed_items"]) else ""
                 math = (
-                    f'<span>Money in</span><span>{_money(rec["total_credits"])}</span>'
-                    f'<span>Money out</span><span>{_money(rec["total_debits"])}</span>'
+                    f'<span>{money_in}</span><span>{_money(rec["total_credits"])}</span>'
+                    f'<span>− {money_out}</span><span>{_money(rec["total_debits"])}</span>'
+                    f'<span class="total">= Net change read ({int(rec["items"])} items)</span><span class="total">{_money(rec["total_credits"] - rec["total_debits"])}</span>'
+                    f'<span>Net change printed on statement{printed_items}</span><span>{_money(rec["printed_net"])}</span>'
+                    f'<span class="total">Difference</span><span class="total">{_money(rec["reconciliation_difference"])}</span>'
+                )
+            elif rec["method"] in ("running_balance", "summary_balance"):
+                opening_label = "Previous balance" if card else "Beginning balance"
+                closing_label = "New balance on statement" if card else "Ending balance on statement"
+                plus, minus = (money_out, money_in) if card else (money_in, money_out)
+                plus_value, minus_value = (rec["total_debits"], rec["total_credits"]) if card else (rec["total_credits"], rec["total_debits"])
+                math = (
+                    f'<span>{opening_label}</span><span>{_money(rec["beginning_balance"])}</span>'
+                    f'<span>+ {plus}</span><span>{_money(plus_value)}</span>'
+                    f'<span>− {minus}</span><span>{_money(minus_value)}</span>'
+                    f'<span class="total">= Expected ending balance</span><span class="total">{_money(rec["expected_ending_balance"])}</span>'
+                    f'<span>{closing_label}</span><span>{_money(rec["ending_balance"])}</span>'
+                    f'<span class="total">Difference</span><span class="total">{_money(rec["reconciliation_difference"])}</span>'
                 )
             else:
                 math = (
-                    f'<span>Beginning balance</span><span>{_money(rec["beginning_balance"])}</span>'
-                    f'<span>+ Money in</span><span>{_money(rec["total_credits"])}</span>'
-                    f'<span>− Money out</span><span>{_money(rec["total_debits"])}</span>'
-                    f'<span class="total">= Expected ending balance</span><span class="total">{_money(rec["expected_ending_balance"])}</span>'
-                    f'<span>Ending balance on statement</span><span>{_money(rec["ending_balance"])}</span>'
-                    f'<span class="total">Difference</span><span class="total">{_money(rec["reconciliation_difference"])}</span>'
+                    f'<span>{money_in}</span><span>{_money(rec["total_credits"])}</span>'
+                    f'<span>{money_out}</span><span>{_money(rec["total_debits"])}</span>'
                 )
             st.markdown(
                 f'<div class="recon-card"><div class="recon-head"><span class="title">{rec["statement_id"]}{account}</span>'
@@ -687,7 +802,8 @@ with template_tab:
     )
     sample_upload = st.file_uploader("Upload one statement from the bank", type=["pdf"], key="template_sample_upload")
     if sample_upload is not None:
-        analysis = analyze_statement(sample_upload.name, sample_upload.getvalue())
+        with st.spinner("Reading the statement…"):
+            analysis = _analyze_cached(sample_upload.name, sample_upload.getvalue(), _templates_key())
         if not analysis.has_text:
             st.error("This PDF has no readable text. It looks like a scanned image; use the PDF downloaded from online banking instead.")
         elif analysis.preview.empty:

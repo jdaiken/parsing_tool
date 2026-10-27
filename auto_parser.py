@@ -12,6 +12,12 @@ out debit vs. credit from, in priority order:
 
 It also suggests a template (bank name + detection keywords) so a user can
 save a new format with one click.
+
+Credit card statements are detected and read with card conventions (charges
+are debits; payments, credits and negative amounts reduce the balance).
+Redacted text ("[REDACTED]", "XXXX", "█") is kept as "[redacted]"; when an
+amount is redacted but the running balance is not, the amount is recovered
+from the change in balance.
 """
 
 from __future__ import annotations
@@ -51,7 +57,29 @@ TRAILING_DATE_RE = re.compile(
 CHECK_NUM_FIRST_RE = re.compile(rf"(?P<num>\d{{3,7}})\*?\s+(?P<date>{DATE})\s+(?P<amt>\$?\d[\d,]*\.\d{{2}})", re.IGNORECASE)
 CHECK_DATE_FIRST_RE = re.compile(rf"(?P<date>{DATE})\s+(?P<num>\d{{3,7}})\*?\s+(?P<amt>\$?\d[\d,]*\.\d{{2}})", re.IGNORECASE)
 DATE_AMOUNT_PAIR_RE = re.compile(rf"{DATE}\s+\$?\d[\d,]*\.\d{{2}}", re.IGNORECASE)
-ACCOUNT_RE = re.compile(r"account\s*(?:number|no\.?|#)\s*:?\s*([0-9Xx*][0-9Xx*\-]{3,})", re.IGNORECASE)
+MASK_CHARS = "Xx*•█"
+ACCOUNT_RE = re.compile(
+    rf"(?:account|card)\s*(?:number|no\.?|#)\s*:?\s*([0-9{MASK_CHARS}][0-9{MASK_CHARS}\- ]{{2,}}[0-9{MASK_CHARS}])"
+    r"|(?:account|card)\s+ending\s+(?:in\s+)?(\d{4})\b",
+    re.IGNORECASE,
+)
+# "[REDACTED]", "REDACTED", runs of block characters, or 4+ X / * / • used to blank out text.
+REDACTION_RE = re.compile(r"\[\s*redacted\s*\]|\bredacted\b|(?:[█■▇]+\s*)+|\bX{4,}\b|\*{4,}|•{4,}", re.IGNORECASE)
+# "Statement Date: 03/01/2008 through 03/31/2008", "Statement period 06/28/24 - 07/29/24".
+PERIOD_RE = re.compile(
+    r"(?:statement|period)[^\n]*?(\d{1,2}/\d{1,2}/\d{2,4})\s*(?:through|thru|to|-|–)\s*(\d{1,2}/\d{1,2}/\d{2,4})",
+    re.IGNORECASE,
+)
+# A heading that starts one account within a statement: "ID : 10 POWER CHECKING", "00 SHARE SAVINGS".
+ACCOUNT_SECTION_RE = re.compile(r"^(?:[A-Za-z█\[\]]{0,10}\s*:\s*)?(?:\d{1,4}\s+)?((?:[A-Z]+\s+){0,3}(?:CHECKING|SAVINGS|MONEY MARKET))$")
+# Printed control totals: "10 Total Deposits : $8,337.98", "43 Total XXXX : $-8,754.29", "Total Checks Paid $305.00".
+CONTROL_TOTAL_RE = re.compile(r"^(?:(?P<count>\d{1,4})\s+)?total\b(?P<label>.*?)[:\s]\s*(?P<amount>-?\s?\$?\s?-?[\d,]+\.\d{2})\s*$", re.IGNORECASE)
+CONTROL_TOTAL_SKIP_RE = re.compile(r"interest|year|ytd|today|period|in (?:19|20)\d\d", re.IGNORECASE)
+CHECK_PAIR_RE = re.compile(
+    rf"(?P<date>{DATE})\s+(?:(?P<num>\d{{3,7}})\*?\s+|(?:XXXX|\[redacted\]|█+)\s+)?(?P<amt>\$?\d[\d,]*\.\d{{2}})",
+    re.IGNORECASE,
+)
+CARD_MARKERS = ("minimum payment due", "credit card", "card ending", "cash advance", "new balance", "credit limit")
 YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 PAGE_FOOTER_RE = re.compile(r"^page\s*\d+\s*(of\s*\d+)?$", re.IGNORECASE)
 
@@ -62,8 +90,13 @@ OPENING_BALANCE_RE = re.compile(
 CLOSING_BALANCE_RE = re.compile(r"(ending|closing|new)\s+balance", re.IGNORECASE)
 CREDIT_SECTION_RE = re.compile(r"deposits|credits|additions|interest paid", re.IGNORECASE)
 DEBIT_SECTION_RE = re.compile(
-    r"withdrawals|debits|subtractions|purchases|payments|fees|charges|check card", re.IGNORECASE
+    r"withdrawals|debits|subtractions|purchases|payments|fees|charges|check card|interest charged", re.IGNORECASE
 )
+CARD_CREDIT_SECTION_RE = re.compile(r"payments|credits|refunds|returns", re.IGNORECASE)
+CARD_DEBIT_SECTION_RE = re.compile(
+    r"purchases|fees|interest charged|cash advances?|balance transfers?|charges", re.IGNORECASE
+)
+CARD_CREDIT_WORDS = ("payment", "credit", "refund", "return", "reversal")
 CHECK_SECTION_RE = re.compile(r"checks(?!\s*card)|checkspaid", re.IGNORECASE)
 SKIP_SECTION_RE = re.compile(
     r"daily\s+(ending\s+)?balance|balance\s+summary|ledger\s+balance|interest\s+charge\s+calculation",
@@ -98,6 +131,9 @@ class _Candidate:
     account: Optional[str]
     is_check: bool = False
     check_number: Optional[str] = None
+    redacted: bool = False
+    period: Optional[Tuple[str, str]] = None  # (start, end) of the statement this line belongs to
+    control: Optional[Tuple[str, float, Optional[int]]] = None  # printed total: (direction, amount, count)
 
 
 @dataclass
@@ -108,6 +144,9 @@ class AutoParseOutput:
     balance_verified_rows: int
     bank_name: Optional[str]
     detection_keywords: List[str] = field(default_factory=list)
+    statement_kind: str = "bank"
+    redacted_rows: int = 0
+    recovered_amounts: int = 0
 
     @property
     def confidence(self) -> str:
@@ -137,15 +176,62 @@ def _parse_amount(match: re.Match) -> Tuple[float, int]:
 def _strip_amounts_and_dates(text: str) -> str:
     text = AMOUNT_RE.sub(" ", text)
     text = DATE_RE.sub(" ", text)
+    text = REDACTION_RE.sub(" [redacted] ", text)
+    text = re.sub(r"(?:\[redacted\]\s*)+", "[redacted] ", text)
     return re.sub(r"\s+", " ", text).strip(" -*=:")
 
 
-def _section_for_header(line: str) -> Optional[str]:
+def detect_statement_kind(full_text: str) -> str:
+    """'credit_card' or 'bank', from wording on the first pages."""
+    head = "\n".join(full_text.splitlines()[:80]).lower()
+    if re.search(r"\bchecking\b", head) and "credit card" not in head:
+        return "bank"
+    return "credit_card" if sum(marker in head for marker in CARD_MARKERS) >= 2 else "bank"
+
+
+def normalize_account(match: re.Match) -> Optional[str]:
+    """Account number from an ACCOUNT_RE match; masked numbers become ****1234."""
+    if match.group(2):
+        return f"****{match.group(2)}"
+    raw = match.group(1).strip()
+    if any(ch in raw for ch in MASK_CHARS):
+        digits = re.sub(r"\D", "", raw)
+        return f"****{digits[-4:]}" if digits else None  # fully redacted: no usable number
+    return raw.split()[0]
+
+
+def summary_balances(full_text: str) -> Tuple[Optional[float], Optional[float]]:
+    """Opening and closing balance from the statement's summary lines (previous/new, beginning/ending)."""
+    opening: Optional[float] = None
+    closing: Optional[float] = None
+    for line in full_text.splitlines():
+        for pattern, is_opening in ((OPENING_BALANCE_RE, True), (CLOSING_BALANCE_RE, False)):
+            if (opening if is_opening else closing) is not None:
+                continue
+            found = pattern.search(line)
+            amount = AMOUNT_RE.search(line, found.end()) if found else None
+            if amount:
+                value, sign = _parse_amount(amount)
+                value = -value if sign < 0 else value
+                if is_opening:
+                    opening = value
+                else:
+                    closing = value
+    return opening, closing
+
+
+def _section_for_header(line: str, is_card: bool = False) -> Optional[str]:
     """Return the section a heading line starts, or None when the line is not a heading."""
     if AMOUNT_RE.search(line) or len(line.split()) > 9:
         return None
     if SKIP_SECTION_RE.search(line):
         return "skip"
+    if is_card:
+        # On a card, payments and credits lower the balance; purchases, fees and interest raise it.
+        if CARD_CREDIT_SECTION_RE.search(line):
+            return "credit"
+        if CARD_DEBIT_SECTION_RE.search(line):
+            return "debit"
     if CHECK_SECTION_RE.search(line):
         return "checks"
     is_credit = bool(CREDIT_SECTION_RE.search(line))
@@ -228,13 +314,24 @@ def suggest_detection_keywords(full_text: str, bank_name: Optional[str]) -> List
     return keywords[:2]
 
 
-def _collect_candidates(pages: List[str]) -> List[_Candidate]:
+def _collect_candidates(pages: List[str], is_card: bool = False) -> List[_Candidate]:
     candidates: List[_Candidate] = []
     section = "all"
-    account: Optional[str] = None
     orphan_lines: List[str] = []  # Description text seen before its dated line (multi-line layouts).
     last_was_txn = False
     pending: Optional[_Candidate] = None  # Dated line whose amount is on a later line.
+    period: Optional[Tuple[str, str]] = None
+    account_number: Optional[str] = None
+    sub_account: Optional[str] = None
+    continued = 0  # follow-on description lines added to the last transaction
+
+    def add(cand: _Candidate) -> None:
+        cand.period = period
+        if account_number and sub_account:
+            cand.account = f"{account_number} · {sub_account}"
+        else:
+            cand.account = sub_account or account_number
+        candidates.append(cand)
 
     for page_number, page_text in enumerate(pages, start=1):
         lines = [re.sub(r"\s+", " ", ln).strip() for ln in page_text.splitlines()]
@@ -245,9 +342,25 @@ def _collect_candidates(pages: List[str]) -> List[_Candidate]:
                 continue
             account_match = ACCOUNT_RE.search(line)
             if account_match:
-                account = account_match.group(1)
+                found = normalize_account(account_match)
+                if found != account_number:
+                    sub_account = None
+                account_number = found
+            period_match = PERIOD_RE.search(line)
+            if period_match:
+                if period and period_match.groups() != period:
+                    sub_account = None
+                period = period_match.groups()
+            section_match = ACCOUNT_SECTION_RE.match(line)
+            if section_match and not AMOUNT_RE.search(line):
+                sub_account = section_match.group(1).title()
+                section = "all"
+                orphan_lines.clear()
+                pending = None
+                last_was_txn = False
+                continue
 
-            header_section = _section_for_header(line)
+            header_section = _section_for_header(line, is_card)
             if header_section:
                 section = header_section
                 orphan_lines.clear()
@@ -261,15 +374,32 @@ def _collect_candidates(pages: List[str]) -> List[_Candidate]:
 
             lower = line.lower()
             amount_matches = list(AMOUNT_RE.finditer(line))
-            if section == "skip" or "%" in line or lower.startswith(("total", "subtotal")):
+            control = CONTROL_TOTAL_RE.match(line)
+            if control and section != "skip" and not CONTROL_TOTAL_SKIP_RE.search(control.group("label")):
+                value, sign = _parse_amount(AMOUNT_RE.search(control.group("amount")) or amount_matches[-1])
+                if "-" in control.group("amount"):
+                    sign = -1
+                label_text = control.group("label")
+                if CREDIT_SECTION_RE.search(label_text) and not DEBIT_SECTION_RE.search(label_text):
+                    direction = "credit"
+                elif DEBIT_SECTION_RE.search(label_text) or CHECK_SECTION_RE.search(label_text) or sign < 0:
+                    direction = "debit"
+                else:
+                    direction = None
+                if direction:
+                    if is_card and re.search(r"payments|credits", label_text, re.IGNORECASE):
+                        direction = "credit"
+                    count = int(control.group("count")) if control.group("count") else None
+                    add(_Candidate(page_number, line_number, "", "__control__", [], section, None, control=(direction, value, count)))
+                last_was_txn = False
+                continue
+            if section == "skip" or lower.startswith(("total", "subtotal")):
                 last_was_txn = False
                 continue
             if OPENING_BALANCE_RE.search(line) or CLOSING_BALANCE_RE.search(line):
                 if amount_matches and LEADING_DATE_RE.match(line):
                     value, sign = _parse_amount(amount_matches[-1])
-                    candidates.append(
-                        _Candidate(page_number, line_number, "", "__balance__", [(value, sign)], section, account)
-                    )
+                    add(_Candidate(page_number, line_number, "", "__balance__", [(value, sign)], section, None))
                 last_was_txn = False
                 continue
 
@@ -277,13 +407,17 @@ def _collect_candidates(pages: List[str]) -> List[_Candidate]:
             check_hits = list(CHECK_NUM_FIRST_RE.finditer(line))
             if not check_hits and section == "checks":
                 check_hits = list(CHECK_DATE_FIRST_RE.finditer(line))
+            if not check_hits and section == "checks":
+                # Check summary with the check numbers blacked out: "03/03/2008 XXXX 531.42 03/17/2008 657.00".
+                check_hits = list(CHECK_PAIR_RE.finditer(line))
             if check_hits and (section == "checks" or len(check_hits) >= 2):
                 for hit in check_hits:
                     value = float(hit.group("amt").replace("$", "").replace(",", ""))
-                    candidates.append(
+                    number = hit.group("num")
+                    add(
                         _Candidate(
-                            page_number, line_number, hit.group("date"), f"Check #{hit.group('num')}",
-                            [(value, -1)], "checks", account, is_check=True, check_number=hit.group("num"),
+                            page_number, line_number, hit.group("date"), f"Check #{number}" if number else "Check (number redacted)",
+                            [(value, -1)], "checks", None, is_check=True, check_number=number, redacted=not number,
                         )
                     )
                 last_was_txn = False
@@ -299,36 +433,45 @@ def _collect_candidates(pages: List[str]) -> List[_Candidate]:
                 rest = line[leading.end():]
                 rest_amounts = list(AMOUNT_RE.finditer(rest))
                 description = _strip_amounts_and_dates(rest)
+                redacted = bool(REDACTION_RE.search(rest))
+                if not rest_amounts and redacted:
+                    # Amount (and balance) blacked out: keep the row so the gap is visible.
+                    add(_Candidate(page_number, line_number, leading.group("d1"), description, [], section, None, redacted=True))
+                    orphan_lines.clear()
+                    pending = None
+                    last_was_txn, continued = True, 0
+                    continue
                 if not rest_amounts:
-                    pending = _Candidate(page_number, line_number, leading.group("d1"), description, [], section, account)
+                    pending = _Candidate(page_number, line_number, leading.group("d1"), description, [], section, None)
                     last_was_txn = False
                     continue
                 if not description and orphan_lines:
                     description = " ".join(orphan_lines)
-                candidates.append(
+                add(
                     _Candidate(
                         page_number, line_number, leading.group("d1"), description,
-                        [_parse_amount(m) for m in rest_amounts], section, account,
+                        [_parse_amount(m) for m in rest_amounts], section, None, redacted=redacted,
                     )
                 )
                 orphan_lines.clear()
                 pending = None
-                last_was_txn = True
+                last_was_txn, continued = True, 0
                 continue
 
             trailing = TRAILING_DATE_RE.match(line)
             if trailing and AMOUNT_RE.search(trailing.group("amts")):
                 tail_amounts = list(AMOUNT_RE.finditer(trailing.group("amts")))
                 description = " ".join(orphan_lines + [trailing.group("desc")]).strip()
-                candidates.append(
+                add(
                     _Candidate(
                         page_number, line_number, trailing.group("d1"), _strip_amounts_and_dates(description),
-                        [_parse_amount(m) for m in tail_amounts], section, account,
+                        [_parse_amount(m) for m in tail_amounts], section, None,
+                        redacted=bool(REDACTION_RE.search(description)),
                     )
                 )
                 orphan_lines.clear()
                 pending = None
-                last_was_txn = True
+                last_was_txn, continued = True, 0
                 continue
 
             if pending is not None:
@@ -337,9 +480,9 @@ def _collect_candidates(pages: List[str]) -> List[_Candidate]:
                     extra = _strip_amounts_and_dates(line)
                     if extra:
                         pending.description = f"{pending.description} {extra}".strip()
-                    candidates.append(pending)
+                    add(pending)
                     pending = None
-                    last_was_txn = True
+                    last_was_txn, continued = True, 0
                 elif len(pending.description) < 200:
                     pending.description = f"{pending.description} {line}".strip()
                 continue
@@ -349,37 +492,68 @@ def _collect_candidates(pages: List[str]) -> List[_Candidate]:
                 orphan_lines.clear()
                 continue
 
-            # Text-only line: continues the previous transaction, or precedes the next one.
-            if last_was_txn and candidates and len(line) <= 60:
-                candidates[-1].description = f"{candidates[-1].description} {line}".strip()
-                last_was_txn = False
+            # Text-only line: continues the previous transaction (up to three lines), or precedes the next one.
+            if last_was_txn and candidates and len(line) <= 140 and continued < 3:
+                candidates[-1].description = f"{candidates[-1].description} {_strip_amounts_and_dates(line) or line}".strip()
+                candidates[-1].redacted = candidates[-1].redacted or bool(REDACTION_RE.search(line))
+                continued += 1
             else:
+                last_was_txn = False
                 orphan_lines.append(line)
                 orphan_lines = orphan_lines[-3:]
 
     return _drop_duplicate_checks(candidates)
 
 
+NOT_A_CHECK_RE = re.compile(r"\bpos\b|debit card|deposit|transfer|\batm\b|\bfee\b|withdrawal|purchase|ach\b", re.IGNORECASE)
+
+
+def _day_number(raw: str) -> Optional[int]:
+    """Rough day-of-year from a date token, for "within a few days" comparisons."""
+    parts = re.findall(r"\d+", raw)
+    if len(parts) >= 2 and not re.match(r"[A-Za-z]", raw):
+        return int(parts[0]) * 31 + int(parts[1])
+    month = re.match(rf"({_MONTH_ALT})", raw, re.IGNORECASE)
+    if month and parts:
+        return MONTH_NAMES[month.group(1).lower()] * 31 + int(parts[0])
+    return None
+
+
 def _drop_duplicate_checks(candidates: List[_Candidate]) -> List[_Candidate]:
-    """Many banks list each check in the register and again in a check summary; keep it once."""
-    register = [c for c in candidates if not c.is_check and c.description != "__balance__"]
+    """
+    Many banks list each check in the register and again in a check summary; keep it once.
+    Matched by check number, or, when numbers are redacted, by the same amount within ten days
+    on a register line that isn't clearly something else (card purchase, ATM, deposit...).
+    """
+    register = [c for c in candidates if not c.is_check and c.description not in ("__balance__", "__control__")]
+    used: set = set()
     kept: List[_Candidate] = []
     for cand in candidates:
         if cand.is_check:
             amount = cand.amounts[0][0]
-            duplicate = any(
-                any(abs(value - amount) < 0.005 for value, _ in reg.amounts[:1])
-                and re.search(rf"\b{re.escape(cand.check_number or '')}\b", reg.description)
-                for reg in register
-            )
-            if duplicate:
+            match = None
+            for i, reg in enumerate(register):
+                if i in used or reg.period != cand.period or not any(abs(v - amount) < 0.005 for v, _ in reg.amounts[:1]):
+                    continue
+                if cand.check_number and re.search(rf"\b{re.escape(cand.check_number)}\b", reg.description):
+                    match = i
+                    break
+                if not cand.check_number and not NOT_A_CHECK_RE.search(reg.description):
+                    a, b = _day_number(cand.date_raw), _day_number(reg.date_raw)
+                    if a is not None and b is not None and abs(a - b) <= 10:
+                        match = i
+                        break
+            if match is not None:
+                used.add(match)
                 continue
         kept.append(cand)
     return kept
 
 
-def _keyword_direction(description: str, credit_keywords: List[str]) -> Optional[str]:
+def _keyword_direction(description: str, credit_keywords: List[str], is_card: bool = False) -> Optional[str]:
     text = description.lower()
+    if is_card:
+        return "credit" if any(word in text for word in CARD_CREDIT_WORDS) else "debit"
     if any(word in text for word in credit_keywords):
         return "credit"
     if any(word in text for word in DEBIT_WORDS):
@@ -400,8 +574,11 @@ def auto_parse(
     full_text = "\n".join(pages)
     bank_name = suggest_bank_name(full_text)
     credit_words = list(credit_keywords) if credit_keywords else list(CREDIT_WORDS)
-    candidates = _collect_candidates(pages)
+    is_card = detect_statement_kind(full_text) == "credit_card"
+    candidates = _collect_candidates(pages, is_card)
 
+    controls = [c for c in candidates if c.description == "__control__"]
+    candidates = [c for c in candidates if c.description != "__control__"]
     real = [c for c in candidates if c.description != "__balance__" and not c.is_check]
     multi = sum(1 for c in real if len(c.amounts) >= 2)
     has_balance_column = bool(real) and multi / len(real) >= 0.6
@@ -409,6 +586,21 @@ def auto_parse(
     base_year = _infer_year(full_text)
     months = {d.month for d in (_to_date(c.date_raw, base_year, False) for c in candidates if c.date_raw) if d}
     wraps_year = 1 in months and 12 in months
+    # One PDF can hold several monthly statements; each period becomes its own statement.
+    periods = list(dict.fromkeys(c.period for c in candidates + controls if c.period))
+    period_names = {period: _period_name(period) for period in periods}
+
+    def statement_for(cand: _Candidate) -> str:
+        if len(periods) > 1 and cand.period:
+            return f"{statement_id} · {period_names[cand.period]}"
+        return statement_id
+
+    def date_for(cand: _Candidate) -> Optional[datetime]:
+        end = _to_date(cand.period[1], base_year, False) if cand.period else None
+        if end is None:
+            return _to_date(cand.date_raw, base_year, wraps_year)
+        # Undated years follow the statement period; December items on a January statement are last year's.
+        return _to_date(cand.date_raw, end.year, end.month <= 2)
 
     label = bank_format or f"auto:{bank_name or 'unknown'}"
     rows: List[Dict] = []
@@ -416,27 +608,42 @@ def auto_parse(
     balance_rows = 0
     verified = 0
     verified_by_account: Dict[Optional[str], int] = {}
+    redacted_rows = 0
+    recovered = 0
 
-    for cand in candidates:
+    for index, cand in enumerate(candidates):
         acct = cand.account or account_number
         if cand.description == "__balance__":
             value, sign = cand.amounts[0]
-            prev_balance[acct] = -value if sign < 0 else value
+            prev_balance[(cand.period, acct)] = -value if sign < 0 else value
             continue
 
-        amount, sign = cand.amounts[0]
+        amount: Optional[float] = cand.amounts[0][0] if cand.amounts else None
+        sign = cand.amounts[0][1] if cand.amounts else 0
         running_balance: Optional[float] = None
         direction: Optional[str] = None
         checked = False
+        note = ""
 
-        if has_balance_column and len(cand.amounts) >= 2 and not cand.is_check:
-            bal_value, bal_sign = cand.amounts[-1]
+        amounts = cand.amounts
+        if cand.redacted and has_balance_column and len(amounts) == 1 and _is_balance_only(candidates, index, acct, amounts[0]):
+            # The amount was blacked out but the balance wasn't: the balance change is the amount.
+            amounts = [(0.0, 0), amounts[0]]
+            amount = None
+
+        if has_balance_column and len(amounts) >= 2 and not cand.is_check:
+            bal_value, bal_sign = amounts[-1]
             running_balance = -bal_value if bal_sign < 0 else bal_value
-            previous = prev_balance.get(acct)
+            previous = prev_balance.get((cand.period, acct))
             if previous is not None:
+                if amount is None:
+                    change = round(running_balance - previous, 2)
+                    amount, direction, checked = abs(change), ("credit" if change > 0 else "debit"), True
+                    note = " (amount redacted; recovered from running balance)"
+                    recovered += 1
                 # Try each non-balance amount; the one that explains the balance change is the transaction.
-                for value, _ in cand.amounts[:-1]:
-                    if value == 0:
+                for value, _ in amounts[:-1]:
+                    if checked or value == 0:
                         continue
                     if abs(previous + value - running_balance) <= 0.011:
                         amount, direction, checked = value, "credit", True
@@ -444,36 +651,40 @@ def auto_parse(
                     if abs(previous - value - running_balance) <= 0.011:
                         amount, direction, checked = value, "debit", True
                         break
-            prev_balance[acct] = running_balance
+            prev_balance[(cand.period, acct)] = running_balance
             balance_rows += 1
             verified += int(checked)
             verified_by_account[acct] = verified_by_account.get(acct, 0) + int(checked)
-        elif len(cand.amounts) >= 2:
-            nonzero = [a for a in cand.amounts if a[0] != 0]
-            amount, sign = nonzero[0] if nonzero else cand.amounts[0]
+        elif len(amounts) >= 2:
+            nonzero = [a for a in amounts if a[0] != 0]
+            amount, sign = nonzero[0] if nonzero else amounts[0]
 
+        if amount is None:
+            note = " (amount redacted)"
         if direction is None and sign:
-            direction = "debit" if sign < 0 else "credit"
+            # Banks print money out as negative; card issuers print payments and credits as negative.
+            direction = ("credit" if is_card else "debit") if sign < 0 else "credit"
         if direction is None and cand.section in ("credit", "debit"):
             direction = cand.section
         if direction is None and cand.section == "checks":
             direction = "debit"
         if direction is None:
-            direction = _keyword_direction(cand.description, credit_words) or default_direction
+            direction = _keyword_direction(cand.description, credit_words, is_card) or default_direction
 
-        description = cand.description or ("Check" if cand.is_check else "Transaction")
+        description = (cand.description or ("Check" if cand.is_check else "Transaction")) + note
         check_number = cand.check_number
         if check_number is None and "check" in description.lower():
             check_match = re.search(r"\b(\d{3,6})\b", description)
             check_number = check_match.group(1) if check_match else None
+        redacted_rows += int(cand.redacted)
 
         rows.append(
             {
-                "statement_id": statement_id,
+                "statement_id": statement_for(cand),
                 "bank_format": label,
                 "account_number": acct,
-                "statement_date": statement_date,
-                "txn_date": _to_date(cand.date_raw, base_year, wraps_year),
+                "statement_date": f"{cand.period[0]} – {cand.period[1]}" if cand.period else statement_date,
+                "txn_date": date_for(cand),
                 "txn_date_raw": cand.date_raw,
                 "description": description,
                 "transaction_type": "check" if (cand.is_check or check_number) else "statement",
@@ -485,6 +696,7 @@ def auto_parse(
                 "check_number": check_number,
                 "source_page": cand.page,
                 "source_line": cand.line_no,
+                "redacted": cand.redacted,
             }
         )
 
@@ -495,6 +707,18 @@ def auto_parse(
         if row["account_number"] not in verified_accounts:
             row["running_balance"] = None
 
+    # Printed control totals ("10 Total Deposits : $8,337.98") per statement and account.
+    totals: Dict[Tuple[str, Optional[str]], Dict[str, float]] = {}
+    for control in controls:
+        direction, value, count = control.control
+        key = (statement_for(control), control.account or account_number)
+        entry = totals.setdefault(key, {})
+        entry[f"control_{direction}_total"] = entry.get(f"control_{direction}_total", 0.0) + value
+        if count is not None:
+            entry[f"control_{direction}_count"] = entry.get(f"control_{direction}_count", 0) + count
+    for row in rows:
+        row.update(totals.get((row["statement_id"], row["account_number"]), {}))
+
     return AutoParseOutput(
         rows=rows,
         has_balance_column=has_balance_column,
@@ -502,4 +726,34 @@ def auto_parse(
         balance_verified_rows=verified,
         bank_name=bank_name,
         detection_keywords=suggest_detection_keywords(full_text, bank_name),
+        statement_kind="credit_card" if is_card else "bank",
+        redacted_rows=redacted_rows,
+        recovered_amounts=recovered,
     )
+
+
+def _period_name(period: Tuple[str, str]) -> str:
+    """'Mar 2008' for a one-month period, otherwise 'Mar 1 – Apr 15, 2008'."""
+    start = _to_date(period[0], datetime.now().year, False)
+    end = _to_date(period[1], datetime.now().year, False)
+    if not start or not end:
+        return f"{period[0]} – {period[1]}"
+    if (end - start).days <= 31 and start.month == end.month:
+        return end.strftime("%b %Y")
+    return f"{start:%b} {start.day} – {end:%b} {end.day}, {end.year}"
+
+
+def _is_balance_only(candidates: List[_Candidate], index: int, account: Optional[str], value: Tuple[float, int]) -> bool:
+    """
+    For a redacted row with a single number: is that number the running balance (amount blacked out)?
+    True when the next row's balance follows from it, or, on the last row, when nothing else is left.
+    """
+    balance = -value[0] if value[1] < 0 else value[0]
+    for nxt in candidates[index + 1:]:
+        if nxt.description == "__balance__" or nxt.is_check or (nxt.account or account) != (candidates[index].account or account):
+            continue
+        if len(nxt.amounts) < 2:
+            return False
+        nxt_balance = -nxt.amounts[-1][0] if nxt.amounts[-1][1] < 0 else nxt.amounts[-1][0]
+        return any(abs(balance + delta - nxt_balance) <= 0.011 for v, _ in nxt.amounts[:-1] for delta in (v, -v))
+    return True

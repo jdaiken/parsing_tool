@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import pdfplumber
+from pdf_text import extract_pdf
 
 
 # The browser build points this at browser storage so saved templates survive a page reload.
@@ -129,10 +128,6 @@ def detect_template(full_text: str, templates: List[Dict]) -> Optional[Dict]:
 
 
 def extract_preview_text(file_bytes: bytes, max_lines: int = 120) -> str:
-    pages: List[str] = []
-    with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-        for page in pdf.pages:
-            pages.append(page.extract_text() or "")
-    merged = "\n".join(pages)
+    merged = "\n".join(extract_pdf(file_bytes).pages)
     lines = [line for line in merged.splitlines() if line.strip()]
     return "\n".join(lines[:max_lines])

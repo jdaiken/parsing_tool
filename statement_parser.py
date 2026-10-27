@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from io import BytesIO
 import re
 from typing import Dict, List, Optional
 
 import pandas as pd
-import pdfplumber
 
-from auto_parser import auto_parse, suggest_bank_name, suggest_detection_keywords
+from auto_parser import (
+    auto_parse,
+    detect_statement_kind,
+    suggest_bank_name,
+    suggest_detection_keywords,
+    summary_balances,
+)
+from pdf_text import extract_pdf
 from template_manager import detect_template, load_templates
 
 AMOUNT_RE = re.compile(r"\$?\d[\d,]*\.\d{2}")
@@ -32,6 +37,7 @@ class ParseResult:
     transactions: pd.DataFrame
     flags: pd.DataFrame
     raw_text: pd.DataFrame
+    notes: List[str] = field(default_factory=list)  # Plain-English remarks shown next to the file name.
 
 
 def _to_amount(text: str) -> Optional[float]:
@@ -47,11 +53,7 @@ def _to_amount(text: str) -> Optional[float]:
 
 
 def _extract_pdf_pages(file_bytes: bytes) -> List[str]:
-    pages: List[str] = []
-    with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-        for page in pdf.pages:
-            pages.append(page.extract_text() or "")
-    return pages
+    return extract_pdf(file_bytes).pages
 
 
 def _detect_format(full_text: str) -> str:
@@ -106,9 +108,19 @@ def _categorize_transaction(
     direction: str,
     transaction_type: str,
     check_number: Optional[str],
+    statement_kind: str = "bank",
 ) -> str:
     text = (description or "").lower()
-    if transaction_type == "check" or ("check" in text and check_number):
+    if statement_kind == "credit_card":
+        if direction == "credit":
+            return "card_payment" if "payment" in text else "card_credit"
+        if "interest" in text or "fee" in text:
+            return "fee_charge"
+        if "cash advance" in text or "atm" in text:
+            return "atm_withdrawal"
+        return "card_purchase"
+    has_check_number = check_number is not None and not pd.isna(check_number) and str(check_number).strip() != ""
+    if transaction_type == "check" or ("check" in text and has_check_number) or re.match(r"(share\s+)?draft\b", text):
         return "check"
 
     for category, terms in CATEGORY_RULES.items():
@@ -610,9 +622,13 @@ def analyze_statement(file_name: str, file_bytes: bytes) -> StatementAnalysis:
     )
 
 
-def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: float = 1000.0) -> ParseResult:
-    pages = _extract_pdf_pages(file_bytes)
+def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: float = 1000.0, progress=None) -> ParseResult:
+    """Parse one statement PDF. `progress(done, total)` reports OCR progress on scanned pages."""
+    extracted = extract_pdf(file_bytes, progress)
+    pages = extracted.pages
     full_text = "\n".join(pages)
+    statement_kind = detect_statement_kind(full_text)
+    opening_balance, closing_balance = summary_balances(full_text)
     fmt = _detect_format(full_text)
     templates = load_templates()
     matched_template = detect_template(full_text, templates)
@@ -672,8 +688,21 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
         "risk_score",
         "risk_level",
         "risk_reasons",
+        "redacted",
+        "statement_kind",
+        "statement_opening_balance",
+        "statement_closing_balance",
+        "control_credit_total",
+        "control_credit_count",
+        "control_debit_total",
+        "control_debit_count",
     ]
     transactions = pd.DataFrame(rows, columns=tx_columns)
+    # Statement-level facts on every row, so the reconciliation can use the printed summary balances.
+    transactions["statement_kind"] = statement_kind
+    transactions["statement_opening_balance"] = opening_balance
+    transactions["statement_closing_balance"] = closing_balance
+    transactions["redacted"] = transactions["redacted"].fillna(False).astype(bool)
     if not transactions.empty:
         transactions["txn_date"] = pd.to_datetime(transactions["txn_date"], errors="coerce")
         transactions["amount"] = pd.to_numeric(transactions["amount"], errors="coerce")
@@ -686,6 +715,7 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
                 row.get("direction", "debit"),
                 row.get("transaction_type", "statement"),
                 row.get("check_number"),
+                statement_kind,
             ),
             axis=1,
         )
@@ -704,4 +734,26 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
         raw_rows.append({"statement_id": statement_id, "page": idx, "text": page_text})
     raw_text = pd.DataFrame(raw_rows)
 
-    return ParseResult(transactions=transactions, flags=flags, raw_text=raw_text)
+    notes: List[str] = []
+    if extracted.ocr_pages:
+        notes.append(f"Scanned: {extracted.ocr_pages} page{'s' if extracted.ocr_pages != 1 else ''} read with OCR")
+    if extracted.unread_scanned_pages:
+        notes.append(
+            f"{extracted.unread_scanned_pages} scanned page{'s' if extracted.unread_scanned_pages != 1 else ''} "
+            "couldn't be read: reading scans needs the version that runs on your computer"
+        )
+    if statement_kind == "credit_card":
+        notes.append("Credit card statement")
+    redacted_count = int(transactions["redacted"].sum()) if not transactions.empty else 0
+    # Masked account numbers (XXXX1234) are normal; only blacked-out or "[REDACTED]" content counts.
+    if redacted_count or extracted.image_redaction_boxes or re.search(r"redacted|█|■", full_text, re.IGNORECASE):
+        notes.append(f"Redacted ({redacted_count} transactions affected)" if redacted_count else "Redacted")
+    recovered = int(transactions["description"].str.contains("recovered from running balance", na=False).sum()) if not transactions.empty else 0
+    if recovered:
+        notes.append(f"{recovered} redacted amount{'s' if recovered != 1 else ''} recovered from the running balance")
+    if extracted.has_leaky_redactions:
+        notes.append(
+            f"Black boxes on {extracted.hidden_lines} line{'s' if extracted.hidden_lines != 1 else ''} still had readable text "
+            "underneath. The app hid it, but the PDF itself still contains it: don't share this file as redacted."
+        )
+    return ParseResult(transactions=transactions, flags=flags, raw_text=raw_text, notes=notes)

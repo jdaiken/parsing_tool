@@ -28,11 +28,17 @@ To try the browser version on your own machine, run `python -m http.server` in t
 
 It opens at http://localhost:8501. `.streamlit/config.toml` keeps it private: only this computer can open it, and no usage statistics are sent.
 
+## Scanned, redacted and credit card statements
+
+- **Scanned statements** (pages that are pictures, such as a printout that was scanned) are read with OCR on your own computer. The OCR models come with `pip install -r requirements.txt`, nothing is downloaded or uploaded, and it works offline. Expect a few seconds per page. The in-browser version can't run OCR, so use the version on your computer for scans.
+- **Redacted statements:** blacked-out text shows as `[redacted]`. If an amount is blacked out but the running balance isn't, the amount is worked out from the change in balance. If black boxes were drawn over text that is still in the PDF (a common redaction mistake), the app hides that text and warns you not to share the file as redacted.
+- **When balances are redacted**, the reconciliation uses the totals printed on the statement instead (for example "10 Total Deposits: $8,337.98"). The app's totals and item counts must match them, which shows every transaction was read.
+- **Credit card statements** are recognized automatically. Charges, fees and interest are money out; payments and refunds are money in. The reconciliation checks previous balance + charges − payments = new balance.
+- **Several monthly statements in one PDF** are split into separate statements by statement period.
+
 ## Adding a new bank
 
 Most statements are read automatically. To make a bank's statements always recognized, open the **Add a New Bank** tab, upload one statement, check the preview, and click **Save this bank**. Nothing else to fill in.
-
-Statements must be PDFs downloaded from online banking. Scanned paper statements can't be read.
 
 ## Excel workpaper tabs
 - `Summary`
@@ -46,7 +52,9 @@ Statements must be PDFs downloaded from online banking. Scanned paper statements
 | File | What it does |
 | --- | --- |
 | `app.py` | The app's screens |
-| `auto_parser.py` | Reads statements from any bank without a template |
+| `auto_parser.py` | Reads statements from any bank without a template, including credit card and redacted statements |
+| `pdf_text.py` | Gets the text out of each PDF page; hides text under black redaction boxes |
+| `ocr.py` | Reads scanned pages on your own computer |
 | `statement_parser.py` | Picks a reader for each statement; built-in bank layouts; risk scoring and flags |
 | `template_manager.py` | Saves and recognizes the banks you add |
 | `workpaper_export.py`, `financial_statements.py` | Excel exports |
