@@ -1,0 +1,16 @@
+# Weekly pull requests for security fixes and updates: Python packages (requirements-lock.txt),
+# the Docker base images and the GitHub Actions above. Review and merge them; the tests run on each.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directories: [/deploy/browser, /deploy/server]
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

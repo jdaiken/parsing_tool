@@ -1,0 +1,70 @@
+# Option 2: the server version behind your organization's single sign-on.
+#
+#   cp deploy/server/.env.example deploy/server/.env    # then fill it in
+#   docker compose -f deploy/server/docker-compose.yml --env-file deploy/server/.env up -d --build
+#
+# People reach the app only through "signin" (oauth2-proxy), which sends them to your identity
+# provider (Microsoft Entra ID, Google Workspace, Okta, or any OpenID Connect provider; Shibboleth
+# through an OIDC bridge). The app itself is on an internal network with no published port, so
+# nobody can reach it without signing in. Put signin behind your HTTPS load balancer or reverse
+# proxy; it must not be served over plain HTTP.
+#
+# Each signed-in person sees only their own projects (the app keys project folders by the
+# X-Forwarded-Email header oauth2-proxy sets). Projects are also encrypted with their passwords.
+# Keep /data on an encrypted disk and include it in your backups.
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/server/Dockerfile
+    image: bank-statement-analyzer-server:latest
+    environment:
+      # Set only on a server approved for case data; turns off the "demonstration copy" warning.
+      BSA_APPROVED_SERVER: "1"
+      # The header the sign-in proxy sets to the signed-in person's email address.
+      BSA_USER_HEADER: "X-Forwarded-Email"
+    volumes:
+      - case-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [internal]
+    restart: unless-stopped
+
+  signin:
+    # Pin this to a digest in production: docker pull, then use image: quay.io/oauth2-proxy/oauth2-proxy@sha256:...
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.12.0
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OIDC_ISSUER_URL}
+      OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${COOKIE_SECRET}
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS}
+      OAUTH2_PROXY_REDIRECT_URL: ${PUBLIC_URL}/oauth2/callback
+      OAUTH2_PROXY_UPSTREAMS: http://app:8501
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_PASS_USER_HEADERS: "true"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_COOKIE_SAMESITE: lax
+      OAUTH2_PROXY_COOKIE_EXPIRE: 8h
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+    ports:
+      - "127.0.0.1:4180:4180"   # your HTTPS reverse proxy forwards to this
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [internal, default]
+    depends_on: [app]
+    restart: unless-stopped
+
+networks:
+  internal:
+    internal: true   # no route to the internet from the app
+
+volumes:
+  case-data:

@@ -207,7 +207,8 @@ def detect_statement_kind(full_text: str) -> str:
 def normalize_account(match: re.Match) -> Optional[str]:
     """Account number from an ACCOUNT_RE match; masked numbers become ****1234."""
     if match.group(2):
-        return f"****{re.sub(r'\D', '', match.group(2))[-4:]}"
+        digits = re.sub(r"\D", "", match.group(2))
+        return f"****{digits[-4:]}"
     raw = match.group(1).strip()
     if any(ch in raw for ch in MASK_CHARS):
         digits = re.sub(r"\D", "", raw)

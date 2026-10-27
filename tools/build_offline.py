@@ -14,7 +14,7 @@ fingerprint of every file, so an IT team can verify the folder they deploy.
     python tools/build_offline.py                       # writes dist/offline/
     python tools/build_offline.py --pyodide-dir DIR     # use an already-downloaded Pyodide 0.29.3 distribution
 
-Needs Python 3.10+ and internet access to registry.npmjs.org, cdn.jsdelivr.net (Pyodide
+Needs Python 3.11+ and internet access to registry.npmjs.org, cdn.jsdelivr.net (Pyodide
 packages) and files.pythonhosted.org. The output works with no internet access at all.
 """
 
@@ -68,13 +68,26 @@ PYPI_WHEELS = [
     ("et_xmlfile-2.0.0-py3-none-any.whl", "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl", "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa"),
     ("plotly-7.1.0-py3-none-any.whl", "https://files.pythonhosted.org/packages/e5/7d/905a3a3d51087515719058c94cfbda2ff0fc14417c20d557ae3e82d8b250/plotly-7.1.0-py3-none-any.whl", "dbb7fa18afce40d0a8e80d1bf162eceb3faa0ce5a77fe741ad09a74cf78f53f3"),
 ]
-# pdfplumber is installed without its dependencies: pypdfium2 has no browser build, and pdfplumber
-# needs it only to render page images, which the app never does in the browser.
-NO_DEPS_WHEEL = "pdfplumber-0.11.10-py3-none-any.whl"
+# How each PyPI package is registered in the bundled Pyodide package index (name, version,
+# what it imports, what it needs), so every package the app asks for resolves on this server.
+# protobuf 7 replaces Pyodide's protobuf 6 (Streamlit needs 7). pdfplumber is listed without
+# pypdfium2: that has no browser build, and pdfplumber needs it only to render page images,
+# which the app never does in the browser.
+LOCK_ENTRIES = {
+    "itsdangerous-2.2.0-py3-none-any.whl": ("itsdangerous", "2.2.0", ["itsdangerous"], []),
+    "blinker-1.9.0-py3-none-any.whl": ("blinker", "1.9.0", ["blinker"], []),
+    "python_multipart-0.0.32-py3-none-any.whl": ("python-multipart", "0.0.32", ["multipart", "python_multipart"], []),
+    "protobuf-7.36.2-py3-none-any.whl": ("protobuf", "7.36.2", ["google"], []),
+    "pdfminer_six-20260107-py3-none-any.whl": ("pdfminer-six", "20260107", ["pdfminer"], ["charset-normalizer", "cryptography"]),
+    "pdfplumber-0.11.10-py3-none-any.whl": ("pdfplumber", "0.11.10", ["pdfplumber"], ["pdfminer-six", "pillow"]),
+    "openpyxl-3.1.5-py2.py3-none-any.whl": ("openpyxl", "3.1.5", ["openpyxl"], ["et-xmlfile"]),
+    "et_xmlfile-2.0.0-py3-none-any.whl": ("et-xmlfile", "2.0.0", ["et_xmlfile"], []),
+    "plotly-7.1.0-py3-none-any.whl": ("plotly", "7.1.0", ["plotly"], ["narwhals", "packaging"]),
+}
 
 APP_FILES = [
     "app.py", "authenticity.py", "auto_parser.py", "bank_directory.py", "dashboard.py", "financial_statements.py",
-    "fraud_rules.py", "ocr.py", "payees.py", "pdf_text.py", "projects.py", "statement_parser.py", "template_manager.py",
+    "fraud_rules.py", "ocr.py", "payees.py", "pdf_text.py", "projects.py", "reconciliation.py", "statement_parser.py", "template_manager.py",
     "version.py", "workpaper_export.py", "web_app.py",
     "assets/logo.png", "assets/fonts/inter-latin-wght-normal.woff2", "assets/fonts/jost-latin-wght-normal.woff2",
     "assets/fonts/cormorant-garamond-latin-wght-italic.woff2", "assets/fonts/LICENSE-Inter.txt",
@@ -82,13 +95,15 @@ APP_FILES = [
     "demo/1_checking_2025-03.pdf", "demo/2_checking_2025-04.pdf", "demo/3_checking_2025-05.pdf",
     "demo/4_credit_card_2025-05.pdf", "demo/5_checking_2025-04_family_copy.pdf",
     "demo/6_checking_2025-05_scanned_redacted.pdf", "demo/ANSWER_KEY.md", "demo/make_demo_case.py",
-    "requirements.txt", "README.md", "SECURITY.md", "docs/SECURITY_AND_DATA_HANDLING.md", "docs/UNIVERSITY_DEPLOYMENT.md",
+    "requirements.txt", "requirements-lock.txt", "README.md", "SECURITY.md", "docs/SECURITY_AND_DATA_HANDLING.md", "docs/UNIVERSITY_DEPLOYMENT.md",
     "start.bat", "start.sh", ".streamlit/config.toml",
 ]
 
-# Only this server; Python runs in a worker started from a blob: URL, which inherits this policy.
+# Only this server. Python runs in a worker started from a blob: URL, which inherits this policy.
+# (Streamlit's download buttons also try an early fetch of an internal stlite.invalid address; the
+# policy blocks it, which is harmless: downloads are served inside the page.)
 CSP = (
-    "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; "
+    "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' blob: data:; worker-src 'self' blob:; "
     "connect-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; "
     "img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob: data:; "
     "manifest-src 'self'; base-uri 'self'; form-action 'none'; object-src 'none'"
@@ -163,20 +178,30 @@ def build(out: Path, pyodide_dir: Path | None, cache: Path) -> None:
     for name in PYODIDE_PACKAGES:
         entry = lock["packages"][name]
         file_name = entry["file_name"]
-        local = pyodide_dir / file_name if pyodide_dir else None
-        data = local.read_bytes() if local and local.exists() else fetch(PYODIDE_PACKAGES_URL + file_name)
+        # A cached or local copy is only a shortcut: it's checked against the same fingerprint.
+        candidates = [cache / file_name] + ([pyodide_dir / file_name] if pyodide_dir else [])
+        local = next((c for c in candidates if c.exists()), None)
+        data = local.read_bytes() if local else fetch(PYODIDE_PACKAGES_URL + file_name)
         check_sha256(data, entry["sha256"], file_name)
+        (cache / file_name).write_bytes(data)
         (pyodide_out / file_name).write_bytes(data)
 
     print("Python packages from PyPI")
-    wheels = vendor / "wheels"
-    wheels.mkdir(parents=True)
     for file_name, url, sha in PYPI_WHEELS:
         cached = cache / file_name
         data = cached.read_bytes() if cached.exists() else fetch(url)
         check_sha256(data, sha, file_name)
         cached.write_bytes(data)
-        (wheels / file_name).write_bytes(data)
+        (pyodide_out / file_name).write_bytes(data)
+        name, version, imports, depends = LOCK_ENTRIES[file_name]
+        lock["packages"][name] = {
+            "name": name, "version": version, "file_name": file_name, "install_dir": "site", "sha256": sha,
+            "package_type": "package", "imports": imports, "depends": depends, "unvendored_tests": False,
+        }
+    # Keep only the packages bundled here, so nothing can be looked up anywhere else.
+    bundled = set(PYODIDE_PACKAGES) | {entry[0] for entry in LOCK_ENTRIES.values()}
+    lock["packages"] = {name: entry for name, entry in lock["packages"].items() if name in bundled}
+    (pyodide_out / "pyodide-lock.json").write_text(json.dumps(lock), encoding="utf-8")
 
     print("The app")
     for name in APP_FILES:
@@ -197,7 +222,6 @@ def build(out: Path, pyodide_dir: Path | None, cache: Path) -> None:
 
 def write_pages(out: Path) -> None:
     files = APP_FILES
-    regular = [f for f, _, _ in PYPI_WHEELS if f != NO_DEPS_WHEEL]
     (out / "boot.js").write_text(
         f"""// Starts the app. Everything is loaded from this server (see the Content Security Policy in index.html).
 import {{ mount }} from "./vendor/stlite/stlite.js";
@@ -209,8 +233,8 @@ mount(
   {{
     entrypoint: "web_app.py",
     pyodideUrl: here("vendor/pyodide/pyodide.mjs"),
-    requirements: ["pandas", ...{json.dumps(regular)}.map((wheel) => here("vendor/wheels/" + wheel))],
-    installs: [{{ requirements: [here("vendor/wheels/{NO_DEPS_WHEEL}")], options: {{ deps: false }} }}],
+    // All of these resolve from the bundled package index in vendor/pyodide.
+    requirements: ["pandas", "openpyxl", "pdfminer.six", "plotly", "pdfplumber"],
     files: Object.fromEntries(files.map((name) => [name, {{ url: here(name) }}])),
     // Saved banks and projects (encrypted) live in this browser's storage.
     idbfsMountpoints: ["/home/pyodide/saved"],

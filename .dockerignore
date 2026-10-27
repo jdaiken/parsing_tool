@@ -1,0 +1,9 @@
+# Keep case data, local environments and git history out of every image.
+.git
+.venv
+.venv-installed
+projects
+statement_templates.json
+**/__pycache__
+dist/offline
+# dist/.download-cache stays: it only speeds up the build, and every file in it is fingerprint-checked.

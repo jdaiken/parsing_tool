@@ -38,7 +38,7 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 PROJECTS_DIR = Path(os.environ.get("STATEMENT_PROJECTS_PATH") or Path(__file__).with_name("projects"))
 MAX_ZIP_BYTES = 200 * 1024 * 1024
 MIN_PASSWORD = 10
-KDF = {"name": "scrypt", "n": 2**15, "r": 8, "p": 1}
+KDF = {"name": "scrypt", "n": 2**15, "r": 8, "p": 3}  # OWASP-recommended scrypt setting (32 MiB of memory)
 BLOB_MAGIC = b"BSA1"  # one encrypted file in a project folder
 CASE_MAGIC = b"BSACASE1"  # a downloaded .bsacase file
 CHECK_TEXT = b"bank-statement-analyzer project key"

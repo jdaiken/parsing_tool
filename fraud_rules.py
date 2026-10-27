@@ -92,7 +92,7 @@ def _gambling(g: pd.DataFrame, series: str) -> List[Finding]:
     if hits.empty:
         return []
     total = float(hits["out"].sum())
-    weekend = int((hits["date"].dt.dayofweek >= 5).sum())
+    weekend = int((hits["date"].dt.day_of_week >= 5).sum())
     places = ", ".join(sorted(set(hits["payee"].str.replace(r"^Cash(?: advance)?: ", "", regex=True))))
     detail = (f"{len(hits)} transactions totalling {_money(total)} at {places} between {_when(hits['date'].min())} and "
               f"{_when(hits['date'].max())}" + (f"; {weekend} on a weekend." if weekend else "."))

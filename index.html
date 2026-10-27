@@ -46,6 +46,7 @@
         "ocr.py",
         "payees.py",
         "projects.py",
+        "reconciliation.py",
         "pdf_text.py",
         "statement_parser.py",
         "template_manager.py",
@@ -66,7 +67,7 @@
       // serves the dot-folders only because of .nojekyll).
       const optionalFiles = [
         "assets/logo.svg", "assets/logo.png", "assets/logo.jpg",
-        "requirements.txt", "README.md", "index.html", ".gitignore", ".nojekyll", "start.bat", "start.sh",
+        "requirements.txt", "requirements-lock.txt", "README.md", "SECURITY.md", "index.html", ".gitignore", ".nojekyll", "start.bat", "start.sh",
         ".streamlit/config.toml", ".vscode/launch.json", ".vscode/tasks.json", ".vscode/extensions.json",
         "demo/ANSWER_KEY.md", "demo/make_demo_case.py", "demo/6_checking_2025-05_scanned_redacted.pdf",
       ];
@@ -89,6 +90,7 @@
           },
           // Same look as .streamlit/config.toml, which the browser version doesn't read.
           streamlitConfig: {
+            "browser.gatherUsageStats": false,
             "client.toolbarMode": "minimal",
             "theme.base": "light",
             "theme.primaryColor": "#1D2844",

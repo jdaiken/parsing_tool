@@ -36,6 +36,7 @@ from bank_directory import BANKS, directory_table
 BANK_NAMES = {bank["name"] for bank in BANKS}
 from financial_statements import build_financial_statements
 from statement_parser import BUILT_IN_FORMAT_NAMES, ParseResult, analyze_statement, parse_statement
+from reconciliation import build_reconciliation_table
 from template_manager import delete_template, extract_preview_text, load_templates, save_template
 from version import APP_VERSION
 from workpaper_export import build_workpaper
@@ -66,10 +67,17 @@ VSCODE_CLONE_URL = "vscode://vscode.git/clone?url=https%3A%2F%2Fgithub.com%2Fjda
 # Streamlit Community Cloud runs apps from /mount/src. Its disk is shared by every visitor, so
 # projects there are kept per browser session only, and users are told to download them.
 HOSTED = str(APP_DIR).startswith("/mount/src")
+# The server version (deploy/server) runs on an organization's own server, behind its sign-in.
+# BSA_APPROVED_SERVER=1 says the organization has approved that server for case data;
+# BSA_USER_HEADER names the header its sign-in proxy sets to the signed-in person, so each
+# person sees only their own projects.
+APPROVED_SERVER = os.environ.get("BSA_APPROVED_SERVER") == "1"
+USER_HEADER = os.environ.get("BSA_USER_HEADER", "").strip()
 # Files that make up the app, for "Download the app"; never projects/ or saved banks.
 APP_FILE_PATTERNS = [
-    "*.py", "*.pdf", "requirements.txt", "README.md", "index.html", ".gitignore", ".nojekyll", "start.bat", "start.sh",
-    ".streamlit/config.toml", ".vscode/*.json", "assets/*", "demo/*",
+    "*.py", "*.pdf", "*.md", "requirements.txt", "requirements-lock.txt", "index.html", ".gitignore", ".nojekyll",
+    ".dockerignore", "start.bat", "start.sh", ".streamlit/config.toml", ".vscode/*.json", ".github/*.yml",
+    ".github/workflows/*.yml", "assets/*", "assets/fonts/*", "demo/*", "docs/*.md", "deploy/*/*", "tools/*.py", "tests/*.py",
 ]
 # The fictional demo case in demo/ (see demo/ANSWER_KEY.md): three months of checking and a credit card,
 # and separately a doctored "family copy" of April next to the genuine April statement.
@@ -270,6 +278,8 @@ if sys.platform == "emscripten":
     privacy_note = "Private: runs inside your browser"
 elif st.context.headers.get("Host", "").split(":")[0] in ("localhost", "127.0.0.1"):
     privacy_note = "Private: runs on your computer"
+elif APPROVED_SERVER:
+    privacy_note = "Runs on your organization's approved server"
 
 st.markdown(
     f"""
@@ -288,7 +298,7 @@ st.markdown(
 )
 # On a server (Streamlit Cloud or any other), uploads leave the user's computer. Say so, unless the
 # organization running the server has approved it for case data and set BSA_APPROVED_SERVER=1.
-RUNS_ON_SERVER = not privacy_note and os.environ.get("BSA_APPROVED_SERVER") != "1"
+RUNS_ON_SERVER = not privacy_note
 if RUNS_ON_SERVER:
     st.error(
         "**Demonstration copy: don't upload real case statements here.** This copy runs on a shared server, so files "
@@ -406,130 +416,18 @@ def _severity_badge(level: str) -> str:
     return {"high": "🔴 High", "medium": "🟠 Medium", "low": "🟢 Low"}.get(str(level).lower(), "⚪ Unrated")
 
 
-RECON_COLUMNS = [
-    "statement_id",
-    "account_number",
-    "method",
-    "statement_kind",
-    "beginning_balance",
-    "total_credits",
-    "total_debits",
-    "expected_ending_balance",
-    "ending_balance",
-    "reconciliation_difference",
-    "printed_net",
-    "printed_items",
-    "items",
-    "status",
-    "notes",
-]
-
-
-def _first_number(frame: pd.DataFrame, column: str):
-    values = pd.to_numeric(frame.get(column, pd.Series(dtype=float)), errors="coerce").dropna()
-    return float(values.iloc[0]) if not values.empty else None
-
-
-def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
-    """
-    Build one reconciliation row per statement and account, using the best evidence available:
-
-    1. running balance: beginning + credits - debits must equal the last running balance;
-    2. printed control totals ("10 Total Deposits : $8,337.98"), used when balances are
-       missing or redacted: the net change and item count must agree;
-    3. the statement's printed opening and closing balances (previous/new balance on a
-       credit card) when the statement holds a single account.
-    A difference within $0.01 is treated as reconciled.
-    """
-    if transactions.empty:
-        return pd.DataFrame(columns=RECON_COLUMNS)
-    rows = []
-    accounts_per_statement = transactions.groupby("statement_id", dropna=False)["account_number"].nunique(dropna=False)
-    # One row per account: a single PDF can hold several accounts (e.g. checking plus a credit line).
-    for (statement_id, account_number), grp in transactions.groupby(["statement_id", "account_number"], dropna=False):
-        # Preserve statement order: date, then PDF page/line position.
-        ordered = grp.sort_values(["txn_date", "source_page", "source_line"]).copy()
-        credits = float(pd.to_numeric(ordered["credit"], errors="coerce").fillna(0).sum())
-        debits = float(pd.to_numeric(ordered["debit"], errors="coerce").fillna(0).sum())
-        running = pd.to_numeric(ordered.get("running_balance"), errors="coerce").dropna()
-        kind = str(ordered["statement_kind"].iloc[0]) if "statement_kind" in ordered and pd.notna(ordered["statement_kind"].iloc[0]) else "bank"
-        row = {
-            "statement_id": statement_id,
-            "account_number": account_number,
-            "method": None,
-            "statement_kind": kind,
-            "beginning_balance": None,
-            "total_credits": credits,
-            "total_debits": debits,
-            "expected_ending_balance": None,
-            "ending_balance": None,
-            "reconciliation_difference": None,
-            "printed_net": None,
-            "printed_items": None,
-            "items": len(ordered),
-            "status": "Needs Review",
-            "notes": "No running balance or printed totals found; manual reconciliation required.",
-        }
-        printed_credits = _first_number(ordered, "control_credit_total")
-        printed_debits = _first_number(ordered, "control_debit_total")
-        opening = _first_number(ordered, "statement_opening_balance")
-        closing = _first_number(ordered, "statement_closing_balance")
-        if not running.empty:
-            # Opening balance: the first printed balance, less every transaction up to and including it
-            # (some banks print a balance only on the last line of each day).
-            net = (
-                pd.to_numeric(ordered["credit"], errors="coerce").fillna(0)
-                - pd.to_numeric(ordered["debit"], errors="coerce").fillna(0)
-            ).cumsum()
-            beginning = float(running.iloc[0]) - float(net.loc[running.index[0]])
-            # Lines after the last printed balance can't be checked against it; carry them forward.
-            ending = float(running.iloc[-1]) + float(net.iloc[-1] - net.loc[running.index[-1]])
-            row.update(method="running_balance", beginning_balance=beginning, ending_balance=ending)
-            row["expected_ending_balance"] = beginning + credits - debits
-            row["reconciliation_difference"] = row["ending_balance"] - row["expected_ending_balance"]
-            if abs(row["reconciliation_difference"]) <= 0.01:
-                row.update(status="Reconciled", notes="Expected ending balance agrees to statement running balance.")
-            else:
-                row.update(status="Variance", notes="Expected ending balance differs from statement running balance.")
-                # Checks listed only in a check summary never touch the register's running balance.
-                unregistered_checks = ordered[(ordered["transaction_type"] == "check") & ordered["running_balance"].isna()]
-                unregistered_total = float(pd.to_numeric(unregistered_checks["debit"], errors="coerce").fillna(0).sum())
-                if unregistered_total and abs(row["reconciliation_difference"] - unregistered_total) <= 0.01:
-                    row["notes"] = (
-                        f"The difference equals the {len(unregistered_checks)} checks (${unregistered_total:,.2f}) listed in the "
-                        "statement's check summary that don't appear in its transaction register. Trace these checks."
-                    )
-        elif printed_credits is not None or printed_debits is not None:
-            # Banks differ on where reversals belong (a negative deposit vs. a withdrawal), so compare
-            # the net change and the number of items rather than each side separately.
-            printed_net = (printed_credits or 0.0) - (printed_debits or 0.0)
-            counts = [_first_number(ordered, "control_credit_count"), _first_number(ordered, "control_debit_count")]
-            printed_items = int(sum(c for c in counts if c is not None)) if any(c is not None for c in counts) else None
-            difference = (credits - debits) - printed_net
-            row.update(method="control_totals", printed_net=printed_net, printed_items=printed_items, reconciliation_difference=difference)
-            items_ok = printed_items is None or printed_items == len(ordered)
-            if abs(difference) <= 0.01 and items_ok:
-                row.update(status="Reconciled", notes="Every transaction was read: the totals and item count agree with the totals printed on the statement.")
-            elif abs(difference) <= 0.01:
-                row.update(status="Variance", notes=f"Totals agree but the statement lists {printed_items} items and {len(ordered)} were read.")
-            else:
-                row.update(status="Variance", notes="The transactions read don't add up to the totals printed on the statement; some may be missing or misread.")
-        elif opening is not None and closing is not None and accounts_per_statement.get(statement_id, 1) == 1:
-            # A card balance rises with charges and falls with payments; a bank balance the other way round.
-            expected = opening + debits - credits if kind == "credit_card" else opening + credits - debits
-            row.update(method="summary_balance", beginning_balance=opening, ending_balance=closing, expected_ending_balance=expected)
-            row["reconciliation_difference"] = closing - expected
-            if abs(row["reconciliation_difference"]) <= 0.01:
-                row.update(status="Reconciled", notes="Opening balance and the transactions read agree to the closing balance printed on the statement.")
-            else:
-                row.update(status="Variance", notes="The transactions read don't account for the change between the printed opening and closing balances.")
-        rows.append(row)
-    return pd.DataFrame(rows, columns=RECON_COLUMNS).sort_values(["statement_id", "account_number"]).reset_index(drop=True)
-
-
 # --- Sidebar: global options that affect parsing and export ---
 
-if HOSTED:
+if USER_HEADER:
+    # One projects folder per signed-in person; the folder name is a fingerprint of who they are.
+    signed_in = st.context.headers.get(USER_HEADER, "").strip().lower()
+    if not signed_in:
+        st.error("Sign-in required: this copy only works through your organization's sign-in page.", icon=":material/lock:")
+        st.stop()
+    PROJECTS_BASE = projects.PROJECTS_DIR / "users" / hashlib.sha256(signed_in.encode("utf-8")).hexdigest()[:32]
+    PROJECTS_BASE.mkdir(parents=True, exist_ok=True)
+elif HOSTED or RUNS_ON_SERVER:
+    # A shared server nobody approved: keep projects for this browser session only.
     PROJECTS_BASE = Path(st.session_state.setdefault("projects_dir", tempfile.mkdtemp(prefix="projects-")))
 else:
     PROJECTS_BASE = projects.PROJECTS_DIR
@@ -616,7 +514,7 @@ with st.sidebar:
                 st.rerun()
             except ValueError as exc:
                 st.error(str(exc))
-    if HOSTED:
+    if PROJECTS_BASE.name.startswith("projects-"):
         st.caption(
             "On this hosted version, projects last until you close the tab. Download a project (Project tab) "
             "to keep it, or run the app on your computer, where projects are saved in its projects folder."
@@ -867,7 +765,7 @@ high_risk_count = int((all_transactions.get("risk_level") == "high").sum()) if n
 medium_risk_count = int((all_transactions.get("risk_level") == "medium").sum()) if not all_transactions.empty else 0
 avg_risk_score = float(pd.to_numeric(all_transactions.get("risk_score"), errors="coerce").fillna(0).mean()) if not all_transactions.empty else 0.0
 flag_count = len(all_flags)
-reconciliation_df = _build_reconciliation_table(all_transactions)
+reconciliation_df = build_reconciliation_table(all_transactions)
 if not evidence.empty and not reconciliation_df.empty:
     file_of = reconciliation_df["statement_id"].astype(str).str.split(" · ").str[0]
     evidence["Reconciliation"] = [
@@ -1192,8 +1090,9 @@ with transactions_tab:
         }
         table = _money_cells(filtered, ["debit", "credit", "running_balance"])
         if current_project:
-            # The editor's key changes whenever the notes or filters do, so its edits always line up with the rows shown.
-            notes_version = hashlib.sha1(json.dumps([current_project["txn_notes"], selected_statements, selected_risks, search_term], sort_keys=True).encode()).hexdigest()[:12]
+            # No key: the editor's identity comes from the rows and notes shown, so it starts fresh whenever
+            # either changes and its edits always line up with the rows on screen. (A keyed editor also
+            # hits a bug in the in-browser build of Streamlit.)
             edited = st.data_editor(
                 table[shown_columns + ["note", "note_key"]],
                 column_config=column_config,
@@ -1202,7 +1101,6 @@ with transactions_tab:
                 width="stretch",
                 hide_index=True,
                 height=480,
-                key=f"txn_notes_{current_project['slug']}_{notes_version}",
             )
             changed = {k: str(n or "").strip() for k, n in zip(edited["note_key"], edited["note"]) if str(n or "").strip() != current_project["txn_notes"].get(k, "")}
             if changed:

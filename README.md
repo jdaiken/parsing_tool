@@ -13,41 +13,55 @@ Upload one or more statement PDFs and the app:
 
 The **Dashboard** tab has interactive charts (cash flow over time, balances, transaction types, red flags, a risk timeline, top payees and day-of-week patterns). Filter by date, account, transaction type, direction, risk or a search word, then export exactly what you selected: Excel, CSV, or a self-contained interactive HTML dashboard. Each chart can also be saved as an image.
 
-**Statements stay private.** Both versions below process files on your own computer. Nothing is uploaded to a server.
+**Statements stay private.** The versions below read statements on your own computer; nothing is uploaded. Projects are encrypted with a password, and every workpaper records each statement's SHA-256 fingerprint. See [SECURITY.md](SECURITY.md) and the [security and data handling guide](docs/SECURITY_AND_DATA_HANDLING.md) before using it on real cases.
 
-## Option 1: Use it in your web browser (no install)
+## Ways to use it
 
-Host this folder on any static web host. For GitHub Pages: repository **Settings → Pages**, deploy from the `main` branch, root folder. Then open the Pages link. The first visit downloads the app (about 40 MB); after that it runs entirely inside the browser tab.
+| | Where statements are read | For |
+| --- | --- | --- |
+| **On your computer** (below) | On your computer; includes OCR for scans | Real cases |
+| **Hosted by your university or organization** ([deployment guide](docs/UNIVERSITY_DEPLOYMENT.md)) | In each person's browser (option 1), or on your organization's approved server behind its sign-in (option 2) | Real cases and classes |
+| **Public demo** (Streamlit Community Cloud, GitHub Pages) | Streamlit Cloud uploads files to its servers | The fictional demo case only |
 
-To try the browser version on your own machine, run `python -m http.server` in this folder and open http://localhost:8000.
+### Hosting it at a university or organization
 
-## Option 2: Run it on your computer
+Two options, both with Docker images and step-by-step instructions in [docs/UNIVERSITY_DEPLOYMENT.md](docs/UNIVERSITY_DEPLOYMENT.md):
 
-**Easiest:** install [Python](https://www.python.org/downloads/) (3.10 or newer; on Windows tick "Add python.exe to PATH"), then double-click `start.bat` (Windows) or run `./start.sh` (Mac/Linux). The first start installs what the app needs; after that it starts straight away.
+1. **Browser version** (`deploy/browser`): a static website. Each person's browser runs the app and reads statements locally; the page is blocked from contacting any address but your server, so the server never holds case data. `python tools/build_offline.py` builds the self-contained folder (every downloaded part is checked against a pinned fingerprint), or use the nginx image.
+2. **Server version** (`deploy/server`): the full app, including OCR, on your server behind your single sign-on (oauth2-proxy with Microsoft Entra ID, Google, Okta or any OpenID Connect provider). Each person sees only their own projects.
+
+### Quick browser demo
+
+`index.html` in this folder runs the app in a browser using public CDNs (handy for GitHub Pages: **Settings → Pages**, deploy from `main`, root folder). For real cases, use the self-contained build above instead. To try it locally: `python -m http.server`, then open http://localhost:8000.
+
+## Run it on your computer
+
+**Easiest:** install [Python](https://www.python.org/downloads/) (3.11 or newer; on Windows tick "Add python.exe to PATH"), then double-click `start.bat` (Windows) or run `./start.sh` (Mac/Linux). The first start installs what the app needs; after that it starts straight away.
 
 **In VS Code:** in the app's sidebar, click **Open in VS Code** (copies the app from GitHub; needs VS Code and Git) or **Download the app (.zip)** and open the unzipped folder with **File → Open Folder**. Then choose **Terminal → Run Task → Start the app**. Once it has been set up, **Run → Start Debugging** (F5) also starts it, so you can set breakpoints.
 
 **By hand:**
 
-1. Install Python 3.10 or newer.
+1. Install Python 3.11 or newer.
 2. In this folder, create and activate a virtual environment:
    - Windows: `python -m venv .venv` then `.venv\Scripts\activate`
    - Mac/Linux: `python3 -m venv .venv` then `source .venv/bin/activate`
-3. Install dependencies: `pip install -r requirements.txt`
+3. Install dependencies: `pip install --require-hashes -r requirements-lock.txt` (exact, fingerprint-checked versions)
 4. Start the app: `streamlit run app.py`
 
 It opens at http://localhost:8501. `.streamlit/config.toml` keeps it private: only this computer can open it, and no usage statistics are sent.
 
 ## Projects
 
-A project keeps one case's statements and your notes together. Create one in the sidebar (**New project**). While it is open:
+A project keeps one case's statements and your notes together, encrypted with a password you choose. Create one in the sidebar (**New project**): give it a case number as its name (the name is the only thing stored unencrypted) and a password of at least 10 characters. A lost password can't be recovered, so keep it in a password manager. While it is open:
 
 - statements you upload are saved in the project, and every statement in it is analyzed together;
 - the **Project** tab holds your case notes and a note for each statement, and lets you remove a statement;
 - the Transactions tab has a **Note** column for notes on single transactions;
-- notes go into the Excel workpaper (a `Case_Notes` sheet and a Note column) and the dashboard exports.
+- notes go into the Excel workpaper (a `Case_Notes` sheet and a Note column) and the dashboard exports;
+- a **case log** records when statements were added (with their SHA-256 fingerprints) or removed, notes were saved and the project was downloaded.
 
-**Download project (.zip)** saves the statements and all the notes in one file; **Open a project file** in the sidebar opens it again, on this computer or another.
+**Lock project** (sidebar) closes it until the password is typed again. On the Project tab, **Download the project** saves everything in one encrypted `.bsacase` file with a password you type (send it separately from the file); **Open a project file** in the sidebar opens it again, on this computer or another. **Close case and erase** removes the project from the app. Projects made before encryption was added open as before, with a prompt to protect them with a password.
 
 Where projects are kept:
 
@@ -99,8 +113,10 @@ What has been tested:
 You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** tab only labels its statements by name: upload one statement, check the preview, and click **Save this bank**. If a statement doesn't reconcile, saving the bank won't fix it; that needs a change to the reader.
 
 ## Excel workpaper tabs
-- `Summary`
-- `Transactions`
+- `Summary` (with the app version, analyst, project and time zone)
+- `Evidence` (each statement's SHA-256 fingerprint, pages, OCR, transactions, reconciliation and document check)
+- `Case_Notes` and `Case_Log` (when a project is open)
+- `Transactions` (each row names its source file, fingerprint, page and line)
 - `Risk_Summary`
 - `Flags_For_Review` (including the fraud patterns found)
 - `Document_Checks`
@@ -121,10 +137,17 @@ You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** 
 | `dashboard.py` | Dashboard charts and exports |
 | `bank_directory.py` | Built-in list of banks and card issuers recognized by name |
 | `template_manager.py` | Saves and recognizes the banks you add |
-| `projects.py` | Project folders: statements and notes for a case |
+| `projects.py` | Encrypted project folders: statements, notes and the case log |
+| `reconciliation.py` | Bank reconciliation against each statement's own figures |
+| `version.py` | The app version printed on workpapers |
 | `start.bat`, `start.sh`, `.vscode/` | One-click start, and VS Code run and debug settings |
 | `workpaper_export.py`, `financial_statements.py` | Excel exports |
-| `index.html`, `web_app.py` | The in-browser version |
+| `index.html`, `web_app.py` | The in-browser version (quick demo, loads from public CDNs) |
+| `tools/build_offline.py` | Builds the self-contained browser version for hosting |
+| `deploy/browser/`, `deploy/server/` | Docker images for the two hosting options |
+| `requirements-lock.txt` | Exact, fingerprinted versions of every package |
+| `tests/` | Automated tests (`python -m pytest`); they run on every push |
+| `SECURITY.md`, `docs/` | Security policy, data handling guide, deployment guide |
 | `demo/` | A fictional fraud case for demos and teaching, with an answer key |
 
 ## Trying it without a statement
@@ -134,6 +157,10 @@ The `demo/` folder holds a fictional elder-financial-exploitation case: three mo
 - **Try it with sample statements** (under the upload box) loads the three checking statements and the credit card.
 - **Try a doctored statement** loads a genuine month next to the doctored copy, so the Document Check tab can show the difference.
 - To show OCR, drag `demo/6_checking_2025-05_scanned_redacted.pdf` into the version that runs on your computer.
+
+## Tests
+
+`python -m pytest` runs the tests: the demo statements reconcile, every planted fraud pattern and document edit is found, projects are unreadable without their password, and the two hosting options stay locked down. GitHub runs them on every push, and builds both Docker images. Dependabot proposes updates to packages, base images and GitHub Actions weekly.
 
 ## Branding
 

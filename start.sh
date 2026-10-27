@@ -7,9 +7,8 @@ if [ ! -x .venv/bin/python ]; then
   echo "Setting up (first run only)..."
   python3 -m venv .venv
 fi
-if [ ! -f .venv-installed ] || [ requirements.txt -nt .venv-installed ]; then
-  .venv/bin/python -m pip install --upgrade pip
-  .venv/bin/python -m pip install -r requirements.txt
+if [ ! -f .venv-installed ] || [ requirements-lock.txt -nt .venv-installed ]; then
+  .venv/bin/python -m pip install --require-hashes -r requirements-lock.txt
   touch .venv-installed
 fi
 exec .venv/bin/python -m streamlit run app.py
