@@ -6,3 +6,4 @@ plotly
 # Reads scanned (image-only) statements on your own computer; models are included, nothing is downloaded.
 rapidocr
 onnxruntime
+cryptography

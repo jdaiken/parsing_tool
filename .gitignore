@@ -5,3 +5,4 @@ __pycache__/
 # Case files and notes: confidential, never commit them.
 projects/
 statement_templates.json
+dist/

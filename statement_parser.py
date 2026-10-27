@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 import re
@@ -41,6 +42,8 @@ class ParseResult:
     raw_text: pd.DataFrame
     notes: List[str] = field(default_factory=list)  # Plain-English remarks shown next to the file name.
     document_checks: List = field(default_factory=list)  # authenticity.Check results for the file
+    # The file as received: name, size, SHA-256 fingerprint, pages, pages read with OCR (for the evidence record).
+    source: Dict = field(default_factory=dict)
 
 
 def _to_amount(text: str) -> Optional[float]:
@@ -702,8 +705,14 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
         "control_debit_count",
         "section",
         "balance_check",
+        "source_file",
+        "source_sha256",
     ]
+    file_sha256 = hashlib.sha256(file_bytes).hexdigest()
     transactions = pd.DataFrame(rows, columns=tx_columns)
+    # Every row records which file it came from, by name and by fingerprint.
+    transactions["source_file"] = file_name
+    transactions["source_sha256"] = file_sha256
     # Statement-level facts on every row, so the reconciliation can use the printed summary balances.
     transactions["statement_kind"] = statement_kind
     transactions["statement_opening_balance"] = opening_balance
@@ -766,4 +775,5 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
         document_checks = check_document(file_bytes, transactions, full_text, extracted.ocr_pages)
     except Exception:  # the checks are advisory; never let them stop a statement from loading
         document_checks = []
-    return ParseResult(transactions=transactions, flags=flags, raw_text=raw_text, notes=notes, document_checks=document_checks)
+    source = {"file": file_name, "bytes": len(file_bytes), "sha256": file_sha256, "pages": len(pages), "ocr_pages": extracted.ocr_pages}
+    return ParseResult(transactions=transactions, flags=flags, raw_text=raw_text, notes=notes, document_checks=document_checks, source=source)

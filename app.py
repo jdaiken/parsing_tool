@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import sys
 import tempfile
 import zipfile
@@ -26,6 +27,7 @@ import streamlit as st
 
 import dashboard
 import fraud_rules
+import pdf_text
 import projects
 from authenticity import WARN, checks_frame, verdict
 from auto_parser import CREDIT_WORDS
@@ -35,6 +37,7 @@ BANK_NAMES = {bank["name"] for bank in BANKS}
 from financial_statements import build_financial_statements
 from statement_parser import BUILT_IN_FORMAT_NAMES, ParseResult, analyze_statement, parse_statement
 from template_manager import delete_template, extract_preview_text, load_templates, save_template
+from version import APP_VERSION
 from workpaper_export import build_workpaper
 
 # --- Page setup and branding ---
@@ -76,6 +79,26 @@ SAMPLE_DOCTORED = ["demo/2_checking_2025-04.pdf", "demo/5_checking_2025-04_famil
 st.set_page_config(page_title=APP_NAME, page_icon=":material/account_balance:", layout="wide")
 
 
+@st.cache_resource(show_spinner=False)
+def _font_faces() -> str:
+    """The brand fonts, embedded so the page never calls an outside font service (assets/fonts, SIL Open Font License)."""
+    faces = (
+        ("Inter", "inter-latin-wght-normal.woff2", "normal", "100 900"),
+        ("Jost", "jost-latin-wght-normal.woff2", "normal", "100 900"),
+        ("Cormorant Garamond", "cormorant-garamond-latin-wght-italic.woff2", "italic", "300 700"),
+    )
+    css = []
+    for family, file_name, style, weights in faces:
+        path = APP_DIR / "assets" / "fonts" / file_name
+        if path.exists():
+            data = base64.b64encode(path.read_bytes()).decode("ascii")
+            css.append(
+                f"@font-face {{font-family: '{family}'; font-style: {style}; font-weight: {weights}; font-display: swap; "
+                f"src: url(data:font/woff2;base64,{data}) format('woff2');}}"
+            )
+    return "\n".join(css)
+
+
 def _logo_html() -> str:
     """The organization's logo if one was added to assets/, otherwise a scales-of-justice mark."""
     for name, mime in (("logo.svg", "image/svg+xml"), ("logo.png", "image/png"), ("logo.jpg", "image/jpeg")):
@@ -96,7 +119,7 @@ def _logo_html() -> str:
 st.markdown(
     f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Jost:wght@300;400;500&family=Cormorant+Garamond:ital,wght@1,500;1,600&display=swap');
+    {_font_faces()}
     .stApp, .stApp p, .stApp label, .stApp button, .stApp input, .stApp textarea, .stApp li, .stApp h1, .stApp h2,
     .stApp h3, .stApp h4, .stApp h5, .stApp [data-baseweb="tab"] {{
         font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;}}
@@ -263,6 +286,16 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+# On a server (Streamlit Cloud or any other), uploads leave the user's computer. Say so, unless the
+# organization running the server has approved it for case data and set BSA_APPROVED_SERVER=1.
+RUNS_ON_SERVER = not privacy_note and os.environ.get("BSA_APPROVED_SERVER") != "1"
+if RUNS_ON_SERVER:
+    st.error(
+        "**Demonstration copy: don't upload real case statements here.** This copy runs on a shared server, so files "
+        "uploaded to it leave your computer. For real cases, use the version that runs on your computer or your "
+        "organization's own copy.",
+        icon=":material/gpp_maybe:",
+    )
 
 
 # --- Display helpers ---
@@ -521,9 +554,21 @@ def _app_files() -> tuple:
 if "open_project" in st.session_state:
     st.session_state["project"] = st.session_state.pop("open_project")
 project_list = projects.list_projects(PROJECTS_BASE)
-project_names = {p["slug"]: p["name"] for p in project_list}
+project_names = {p["slug"]: p["name"] + ("" if p["encrypted"] else " (not password-protected)") for p in project_list}
 if st.session_state.get("project") not in project_names:
     st.session_state["project"] = ""
+# Keys of the projects unlocked in this browser session; never written anywhere.
+project_keys = st.session_state.setdefault("project_keys", {})
+
+
+def _clear_session(keep_projects_dir: bool = True) -> None:
+    """Forget everything this session holds: unlocked keys, uploads, cached statement text and results."""
+    pdf_text._CACHE.clear()
+    st.cache_data.clear()
+    keep = {"projects_dir": st.session_state.get("projects_dir")} if keep_projects_dir else {}
+    st.session_state.clear()
+    st.session_state.update({k: v for k, v in keep.items() if v})
+
 
 with st.sidebar:
     st.markdown("#### Project")
@@ -532,23 +577,42 @@ with st.sidebar:
         [""] + list(project_names),
         format_func=lambda slug: project_names.get(slug, "No project (quick look)"),
         key="project",
-        help="A project keeps a case's statements and your notes together.",
+        help="A project keeps a case's statements and your notes together, encrypted with its password.",
     )
+    if st.session_state["project"] in project_keys:
+        if st.button("Lock project", icon=":material/lock:", width="stretch",
+                     help="Forget this project's password in this session. You'll need the password to open it again."):
+            project_keys.pop(st.session_state["project"], None)
+            st.session_state["open_project"] = ""
+            st.rerun()
     with st.expander("New project", icon=":material/create_new_folder:"):
         with st.form("new_project", clear_on_submit=True, border=False):
-            new_name = st.text_input("Project name", placeholder="Hartwell estate review")
-            new_description = st.text_area("Description (optional)", height=80)
+            new_name = st.text_input("Project name", placeholder="Case 2025-014",
+                                     help="The name is the only thing stored unencrypted. Use a case number, not a person's name.")
+            new_description = st.text_area("Description (optional)", height=70)
+            new_password = st.text_input("Password", type="password", help=f"At least {projects.MIN_PASSWORD} characters.")
+            new_password_again = st.text_input("Password again", type="password")
+            st.caption("Everything in the project is encrypted with this password. A lost password can't be recovered: "
+                       "keep it in your organization's password manager.")
             if st.form_submit_button("Create project", type="primary"):
                 try:
-                    st.session_state["open_project"] = projects.create_project(new_name, new_description, PROJECTS_BASE)
+                    if new_password != new_password_again:
+                        raise ValueError("The two passwords don't match.")
+                    slug, key = projects.create_project(new_name, new_description, new_password, PROJECTS_BASE)
+                    project_keys[slug] = key
+                    st.session_state["open_project"] = slug
                     st.rerun()
                 except ValueError as exc:
                     st.error(str(exc))
-    with st.expander("Open a project file (.zip)", icon=":material/folder_open:"):
-        project_zip = st.file_uploader("Project file", type=["zip"], label_visibility="collapsed")
-        if project_zip is not None and st.button("Open this project"):
+    with st.expander("Open a project file", icon=":material/folder_open:"):
+        project_file = st.file_uploader("Project file (.bsacase)", type=["bsacase", "zip"], label_visibility="collapsed")
+        project_file_password = st.text_input("The file's password", type="password", key="project_file_password",
+                                              help="For an older unencrypted .zip, type a new password to protect it with.")
+        if project_file is not None and st.button("Open this project"):
             try:
-                st.session_state["open_project"] = projects.import_zip(project_zip.getvalue(), PROJECTS_BASE)
+                slug, key = projects.import_case(project_file.getvalue(), project_file_password, PROJECTS_BASE)
+                project_keys[slug] = key
+                st.session_state["open_project"] = slug
                 st.rerun()
             except ValueError as exc:
                 st.error(str(exc))
@@ -569,7 +633,12 @@ with st.sidebar:
     large_txn_threshold = st.number_input("Flag transactions over ($)", min_value=100.0, value=1000.0, step=100.0)
     # Whether the exported workpaper includes a tab of raw PDF text per page.
     include_raw_text = st.checkbox("Include full statement text in the workpaper", value=False)
+    analyst = st.text_input("Analyst (printed on workpapers)", key="analyst", placeholder="Your name")
     st.caption(f"Banks you've added: {len(load_templates())}")
+    if st.button("Clear this session", icon=":material/mop:", width="stretch",
+                 help="Forgets uploads, results and unlocked projects in this browser tab. Saved projects stay saved."):
+        _clear_session()
+        st.rerun()
 
     st.markdown("#### Work on it in VS Code")
     st.markdown(
@@ -592,7 +661,23 @@ with st.sidebar:
 
 # --- File upload and parsing ---
 
-current_project = projects.load_project(st.session_state["project"], PROJECTS_BASE) if st.session_state["project"] else None
+current_project = None
+open_slug = st.session_state["project"]
+project_key = project_keys.get(open_slug)
+if open_slug and projects.is_encrypted(open_slug, PROJECTS_BASE) and project_key is None:
+    # A protected project stays closed until its password is typed in this session.
+    _section(f"{project_names[open_slug]} is locked", "Type the project's password to open it.")
+    with st.form("unlock_project", border=False):
+        unlock_password = st.text_input("Password", type="password")
+        if st.form_submit_button("Unlock", type="primary", icon=":material/lock_open:"):
+            try:
+                project_keys[open_slug] = projects.unlock(open_slug, unlock_password, PROJECTS_BASE)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+    st.stop()
+if open_slug:
+    current_project = projects.load_project(open_slug, PROJECTS_BASE, project_key)
 if current_project:
     _section(
         f"Statements in {current_project['name']}",
@@ -615,11 +700,11 @@ if current_project:
     seen = st.session_state.setdefault("saved_uploads", set())
     fresh = [u for u in uploads or [] if (current_project["slug"], u.file_id) not in seen]
     if fresh:
-        added = projects.add_files(current_project["slug"], [(u.name, u.getvalue()) for u in fresh], PROJECTS_BASE)
+        added = projects.add_files(current_project["slug"], [(u.name, u.getvalue()) for u in fresh], PROJECTS_BASE, project_key)
         seen.update((current_project["slug"], u.file_id) for u in fresh)
         if added:
             st.toast(f"Saved to {current_project['name']}: {', '.join(added)}", icon=":material/folder:")
-        current_project = projects.load_project(current_project["slug"], PROJECTS_BASE)
+        current_project = projects.load_project(current_project["slug"], PROJECTS_BASE, project_key)
     uploads = []
 if uploads:
     st.session_state["use_samples"] = None
@@ -636,7 +721,7 @@ if not uploads and not current_project and all((APP_DIR / name).exists() for nam
 
 statement_files = list(uploads or [])
 if current_project:
-    statement_files = [_BundledFile(name, data) for name, data in projects.read_files(current_project["slug"], PROJECTS_BASE)]
+    statement_files = [_BundledFile(name, data) for name, data in projects.read_files(current_project["slug"], PROJECTS_BASE, project_key)]
 elif not statement_files and st.session_state.get("use_samples") in SAMPLE_SETS:
     statement_files = [
         _BundledFile(Path(name).name, (APP_DIR / name).read_bytes()) for name in SAMPLE_SETS[st.session_state["use_samples"]]
@@ -675,6 +760,8 @@ tx_columns = [
     "control_debit_count",
     "section",
     "balance_check",
+    "source_file",
+    "source_sha256",
 ]
 flag_columns = ["flag_type", "severity", "message", "txn_date", "amount", "description", "check_number"]
 
@@ -748,6 +835,23 @@ if current_project:
         + "|" + all_transactions["source_line"].astype(str)
     )
     all_transactions["note"] = [current_project["txn_notes"].get(key, "") for key in all_transactions["note_key"]]
+# The evidence record: one row per file analyzed, with its fingerprint and what was found in it.
+evidence = pd.DataFrame(
+    [
+        {
+            "File": name,
+            "SHA-256": getattr(r, "source", {}).get("sha256", ""),
+            "Bytes": getattr(r, "source", {}).get("bytes"),
+            "Pages": getattr(r, "source", {}).get("pages"),
+            "Pages read with OCR": getattr(r, "source", {}).get("ocr_pages"),
+            "Transactions": len(r.transactions),
+            "Statements": ", ".join(sorted(r.transactions["statement_id"].astype(str).unique())) if not r.transactions.empty else "",
+            "Document check": verdict(getattr(r, "document_checks", []))[1],
+        }
+        for name, r in zip(file_names, results)
+    ],
+    columns=["File", "SHA-256", "Bytes", "Pages", "Pages read with OCR", "Transactions", "Statements", "Document check"],
+)
 document_checks = pd.concat(
     [checks_frame(name, getattr(r, "document_checks", [])) for name, r in zip(file_names, results)] or [checks_frame("", [])], ignore_index=True
 )
@@ -764,6 +868,11 @@ medium_risk_count = int((all_transactions.get("risk_level") == "medium").sum()) 
 avg_risk_score = float(pd.to_numeric(all_transactions.get("risk_score"), errors="coerce").fillna(0).mean()) if not all_transactions.empty else 0.0
 flag_count = len(all_flags)
 reconciliation_df = _build_reconciliation_table(all_transactions)
+if not evidence.empty and not reconciliation_df.empty:
+    file_of = reconciliation_df["statement_id"].astype(str).str.split(" · ").str[0]
+    evidence["Reconciliation"] = [
+        ", ".join(sorted(set(reconciliation_df.loc[file_of == Path(name).stem, "status"].astype(str)))) for name in evidence["File"]
+    ]
 has_data = has_uploads and not all_transactions.empty
 EMPTY_NOTE = "Upload a statement above, or click **Try it with sample statements**, to see results here."
 
@@ -781,13 +890,31 @@ overview_tab, dashboard_tab, transactions_tab, risk_tab, document_tab, reconcili
 if current_project:
     with tabs["Project"]:
         slug = current_project["slug"]
+        protected = current_project["encrypted"]
         st.markdown(
             f'<div class="project-head"><div class="project-name">{escape(current_project["name"])}</div>'
             f'<p>{escape(current_project["description"]) or "No description yet."}</p>'
-            f'<span>Created {escape(current_project["created"])} · last saved {escape(current_project["updated"])}'
+            f'<span>{"🔒 Encrypted" if protected else "⚠ Not password-protected"} · created {escape(current_project["created"])}'
+            f' · last saved {escape(current_project["updated"])}'
             f' · {len(current_project["files"])} statement{"s" if len(current_project["files"]) != 1 else ""}</span></div>',
             unsafe_allow_html=True,
         )
+        if not protected:
+            # Projects from before encryption: offer to encrypt them in place.
+            st.warning("This project was saved before projects were encrypted: its statements and notes are readable by anyone "
+                       "with access to this computer. Protect it with a password.", icon=":material/lock_open:")
+            with st.form(f"protect_{slug}", border=False):
+                c1, c2, c3 = st.columns([1, 1, 0.7])
+                protect_password = c1.text_input("New password", type="password", help=f"At least {projects.MIN_PASSWORD} characters.")
+                protect_again = c2.text_input("Password again", type="password")
+                if c3.form_submit_button("Protect this project", type="primary"):
+                    try:
+                        if protect_password != protect_again:
+                            raise ValueError("The two passwords don't match.")
+                        project_keys[slug] = projects.protect(slug, protect_password, PROJECTS_BASE)
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
         left, right = st.columns([1.15, 1])
         with left:
             _section("Statements", "Add a note to each statement, or tick Remove to take it out of the project")
@@ -809,38 +936,65 @@ if current_project:
                     width="stretch",
                 )
                 if st.form_submit_button("Save statement notes"):
-                    meta = projects.load_project(slug, PROJECTS_BASE)
+                    meta = projects.load_project(slug, PROJECTS_BASE, project_key)
                     meta["file_notes"] = {row["File"]: str(row["Note"] or "") for _, row in edited_files.iterrows() if str(row["Note"] or "").strip()}
-                    projects.save_project(meta, PROJECTS_BASE)
+                    projects.log_event(meta, "Statement notes saved")
+                    projects.save_project(meta, PROJECTS_BASE, project_key)
                     for _, row in edited_files[edited_files["Remove"]].iterrows():
-                        projects.remove_file(slug, row["File"], PROJECTS_BASE)
+                        projects.remove_file(slug, row["File"], PROJECTS_BASE, project_key)
                     st.rerun()
             if not current_project["files"]:
                 st.caption("No statements yet: add them with the upload box above.")
         with right:
             _section("Case notes", "Your working notes for this project; saved with it and included in the workpaper")
             with st.form(f"notes_{slug}", border=False):
-                project_name = st.text_input("Project name", value=current_project["name"])
+                project_name = st.text_input("Project name", value=current_project["name"],
+                                             help="Stored unencrypted so the project can be listed: use a case number, not a person's name.")
                 project_description = st.text_area("Description", value=current_project["description"], height=70)
                 case_notes = st.text_area("Notes", value=current_project["notes"], height=260,
                                           placeholder="Who asked for the review, what you've found, what to request next…")
                 if st.form_submit_button("Save notes", type="primary"):
-                    meta = projects.load_project(slug, PROJECTS_BASE)
+                    meta = projects.load_project(slug, PROJECTS_BASE, project_key)
                     meta.update(name=project_name.strip() or meta["name"], description=project_description, notes=case_notes)
-                    projects.save_project(meta, PROJECTS_BASE)
+                    projects.log_event(meta, "Case notes saved")
+                    projects.save_project(meta, PROJECTS_BASE, project_key)
                     st.rerun()
         st.caption("Notes on single transactions are on the Transactions tab (the Note column).")
-        d1, d2, _ = st.columns([1.2, 1, 1.8])
-        d1.download_button(
-            "Download project (.zip)", data=projects.export_zip(slug, PROJECTS_BASE), file_name=f"{slug}.zip", mime="application/zip",
-            icon=":material/download:", help="The statements and every note in one file. Open it again from the sidebar.",
-        )
-        with d2.popover("Delete project", icon=":material/delete:"):
-            st.markdown(f"Delete **{escape(current_project['name'])}**, its statements and notes from this app? Download it first if you might need it.")
-            if st.button("Yes, delete it", type="primary"):
-                projects.delete_project(slug, PROJECTS_BASE)
-                st.session_state["open_project"] = ""
-                st.rerun()
+        with st.expander("Case log", icon=":material/history:"):
+            st.caption("When statements were added or removed, notes saved and the project downloaded. Included in the workpaper.")
+            st.dataframe(pd.DataFrame(current_project["log"], columns=["time", "event", "detail"]).iloc[::-1],
+                         column_config={"time": "When", "event": "What", "detail": "Details"}, hide_index=True, width="stretch")
+        _section("Keep a copy, or close the case", "")
+        d1, d2 = st.columns([1.3, 1])
+        with d1:
+            st.markdown("**Download the project**")
+            st.caption("One encrypted .bsacase file with the statements and every note. Send the password separately from "
+                       "the file (never in the same email). Open it again from the sidebar.")
+            with st.form(f"export_{slug}", border=False):
+                e1, e2 = st.columns(2)
+                export_password = e1.text_input("Password for the file", type="password", help=f"At least {projects.MIN_PASSWORD} characters.")
+                export_again = e2.text_input("Password again", type="password", key="export_again")
+                if st.form_submit_button("Encrypt for download", icon=":material/enhanced_encryption:"):
+                    try:
+                        if export_password != export_again:
+                            raise ValueError("The two passwords don't match.")
+                        st.session_state[f"case_file_{slug}"] = projects.export_case(slug, export_password, PROJECTS_BASE, project_key)
+                    except ValueError as exc:
+                        st.error(str(exc))
+            if st.session_state.get(f"case_file_{slug}"):
+                st.download_button("Download project (.bsacase)", data=st.session_state[f"case_file_{slug}"], file_name=f"{slug}.bsacase",
+                                   mime="application/octet-stream", icon=":material/download:", type="primary",
+                                   on_click=lambda: st.session_state.pop(f"case_file_{slug}", None))
+        with d2:
+            st.markdown("**Close the case**")
+            st.caption("Erases this project (statements, notes and log) from this app and clears this session. "
+                       "Download it first if it must be kept.")
+            with st.popover("Close case and erase", icon=":material/delete_forever:"):
+                st.markdown(f"Erase **{escape(current_project['name'])}** from this app? This can't be undone.")
+                if st.button("Yes, erase it", type="primary"):
+                    projects.delete_project(slug, PROJECTS_BASE)
+                    _clear_session()
+                    st.rerun()
 
 
 def _feature(icon_path: str, title: str, text: str) -> str:
@@ -995,7 +1149,12 @@ with dashboard_tab:
             stamp = f"{datetime.now():%Y%m%d_%H%M}"
             e1.download_button("Filtered transactions (.xlsx)", dashboard.to_excel(view), file_name=f"transactions_{stamp}.xlsx", icon=":material/table_view:", width="stretch")
             e2.download_button("Filtered transactions (.csv)", dashboard.export_frame(view).to_csv(index=False).encode(), file_name=f"transactions_{stamp}.csv", mime="text/csv", icon=":material/description:", width="stretch")
-            report = dashboard.to_html_report(f"{APP_NAME}: dashboard", f"{ORG_NAME} · {len(view)} transactions · exported {datetime.now():%b %d, %Y}", [(t, f) for t, _, f in charts])
+            report = dashboard.to_html_report(
+                f"{APP_NAME}: dashboard",
+                f"{ORG_NAME} · {len(view)} transactions · exported {datetime.now().astimezone():%b %d, %Y %H:%M %Z} · {APP_NAME} {APP_VERSION}",
+                [(t, f) for t, _, f in charts],
+                sources=list(zip(evidence["File"], evidence["SHA-256"])),
+            )
             e3.download_button("Interactive dashboard (.html)", report.encode(), file_name=f"dashboard_{stamp}.html", mime="text/html", icon=":material/monitoring:", width="stretch")
 
 with transactions_tab:
@@ -1047,13 +1206,13 @@ with transactions_tab:
             )
             changed = {k: str(n or "").strip() for k, n in zip(edited["note_key"], edited["note"]) if str(n or "").strip() != current_project["txn_notes"].get(k, "")}
             if changed:
-                meta = projects.load_project(current_project["slug"], PROJECTS_BASE)
+                meta = projects.load_project(current_project["slug"], PROJECTS_BASE, project_key)
                 for key, note in changed.items():
                     if note:
                         meta["txn_notes"][key] = note
                     else:
                         meta["txn_notes"].pop(key, None)
-                projects.save_project(meta, PROJECTS_BASE)
+                projects.save_project(meta, PROJECTS_BASE, project_key)
                 st.rerun()
         else:
             st.dataframe(table[shown_columns], column_config=column_config, width="stretch", hide_index=True, height=480)
@@ -1199,11 +1358,20 @@ with export_tab:
                  {"item": "Case notes", "note": current_project["notes"]}]
                 + [{"item": f"Statement: {name}", "note": note} for name, note in current_project["file_notes"].items()]
             )
+        analyzed_at = datetime.now().astimezone()
+        run_details = [
+            ("App version", f"{APP_NAME} {APP_VERSION}"),
+            ("Analyst", st.session_state.get("analyst") or "(not entered)"),
+            ("Project", current_project["name"] if current_project else "(none)"),
+            ("Large-transaction threshold", f"${large_txn_threshold:,.0f}"),
+            ("Statement files analyzed", len(results)),
+        ]
+        case_log = pd.DataFrame(current_project["log"], columns=["time", "event", "detail"]) if current_project else None
         workpaper_bytes = build_workpaper(
             all_transactions.drop(columns=["note_key"], errors="ignore"), all_flags, all_raw if include_raw_text else pd.DataFrame(),
-            datetime.now(), document_checks, case_notes,
+            analyzed_at, document_checks, case_notes, evidence, run_details, case_log,
         )
-        financial_bytes = build_financial_statements(all_transactions, reconciliation_df, datetime.now())
+        financial_bytes = build_financial_statements(all_transactions, reconciliation_df, analyzed_at)
         d1, d2 = st.columns(2)
         with d1:
             st.markdown(
@@ -1219,6 +1387,12 @@ with export_tab:
                 unsafe_allow_html=True,
             )
             st.download_button("Download financial statements (.xlsx)", data=BytesIO(financial_bytes).getvalue(), file_name=f"financial_statements_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:", width="stretch")
+        _section("Evidence record", "Each statement's SHA-256 fingerprint: any copy with the same fingerprint is byte-for-byte the "
+                 "file analyzed here. The workpaper's Evidence sheet holds the same record, and every transaction row names its file, page and line.")
+        st.dataframe(evidence, hide_index=True, width="stretch",
+                     column_config={"SHA-256": st.column_config.TextColumn("SHA-256", width="large")})
+        st.caption(f"{APP_NAME} {APP_VERSION} · analyzed {analyzed_at:%b %d, %Y %H:%M %Z}"
+                   + (f" · analyst: {st.session_state['analyst']}" if st.session_state.get("analyst") else ""))
 
 with template_tab:
     # One-click onboarding: upload a statement from a new bank, check what was read, save it.

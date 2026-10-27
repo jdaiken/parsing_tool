@@ -41,6 +41,9 @@ def build_workpaper(
     parsed_at: datetime,
     document_checks: pd.DataFrame | None = None,
     case_notes: pd.DataFrame | None = None,
+    evidence: pd.DataFrame | None = None,
+    run_details: list[tuple[str, object]] | None = None,
+    case_log: pd.DataFrame | None = None,
 ) -> bytes:
     output = BytesIO()
     risk_counts = (
@@ -55,7 +58,8 @@ def build_workpaper(
     )
 
     summary_rows = [
-        {"metric": "Parsed Timestamp", "value": parsed_at.strftime("%Y-%m-%d %H:%M:%S")},
+        {"metric": "Parsed Timestamp", "value": parsed_at.strftime("%Y-%m-%d %H:%M:%S %Z").strip()},
+        *({"metric": label, "value": value} for label, value in (run_details or [])),
         {"metric": "Total Statements", "value": transactions["statement_id"].nunique() if not transactions.empty else 0},
         {"metric": "Total Transactions", "value": len(transactions)},
         {"metric": "Total Debits", "value": float(transactions["debit"].fillna(0).sum()) if not transactions.empty else 0},
@@ -83,8 +87,15 @@ def build_workpaper(
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         summary.to_excel(writer, sheet_name="Summary", index=False)
 
+        # Which files were analyzed, fingerprinted, so anyone can confirm the analysis used exactly these files.
+        if evidence is not None and not evidence.empty:
+            evidence.to_excel(writer, sheet_name="Evidence", index=False)
+
         if case_notes is not None and not case_notes.empty:
             case_notes.to_excel(writer, sheet_name="Case_Notes", index=False)
+
+        if case_log is not None and not case_log.empty:
+            case_log.to_excel(writer, sheet_name="Case_Log", index=False)
 
         transactions_out = transactions.copy()
         if not transactions_out.empty:

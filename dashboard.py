@@ -7,8 +7,9 @@ KPIs and the exports always show the same rows.
 
 from __future__ import annotations
 
+from html import escape
 from io import BytesIO
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
 import plotly.express as px
@@ -162,6 +163,7 @@ EXPORT_COLUMNS = {
     "date": "Date", "account": "Statement / account", "description": "Description", "payee": "Payee", "category": "Type",
     "money_in": "Money in", "money_out": "Money out", "running_balance": "Balance", "risk": "Risk",
     "risk_score": "Risk score", "risk_reasons": "Why flagged", "redacted": "Redacted",
+    "source_file": "Source file", "source_page": "Page", "source_line": "Line",
 }
 
 
@@ -186,14 +188,21 @@ def to_excel(df: pd.DataFrame) -> bytes:
     return buffer.getvalue()
 
 
-def to_html_report(title: str, subtitle: str, figures: List[tuple]) -> str:
-    """One self-contained HTML file with every chart (interactive, works offline)."""
+def to_html_report(title: str, subtitle: str, figures: List[tuple], sources: Optional[List[tuple]] = None) -> str:
+    """
+    One self-contained HTML file with every chart (interactive, works offline). `sources` is
+    [(file name, SHA-256)] for the statements behind it, listed at the end.
+    """
     parts = []
     for i, (heading, fig) in enumerate(figures):
         chart = fig.to_html(full_html=False, include_plotlyjs=(i == 0), config=PLOTLY_CONFIG)
         parts.append(f"<section><h2>{heading}</h2>{chart}</section>")
+    if sources:
+        rows = "".join(f"<tr><td>{escape(str(name))}</td><td><code>{escape(str(digest))}</code></td></tr>" for name, digest in sources)
+        parts.append(f"<section><h2>Source statements</h2><table><tr><th>File</th><th>SHA-256 fingerprint</th></tr>{rows}</table></section>")
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><style>body{{font-family:{FONT};margin:0;background:#F3F3F3;color:#1F2937}}
 header{{background:{NAVY};color:#fff;padding:24px 32px}}header h1{{margin:0;font-size:24px}}header p{{margin:6px 0 0;opacity:.85}}
 main{{max-width:1100px;margin:0 auto;padding:16px}}section{{background:#fff;border:1px solid #E2E2E2;border-radius:12px;padding:16px;margin:16px 0}}
-h2{{font-size:16px;color:{NAVY};margin:0 0 8px}}</style></head><body><header><h1>{title}</h1><p>{subtitle}</p></header><main>{''.join(parts)}</main></body></html>"""
+h2{{font-size:16px;color:{NAVY};margin:0 0 8px}}table{{border-collapse:collapse;font-size:13px}}td,th{{text-align:left;padding:4px 12px 4px 0}}
+code{{font-size:12px}}</style></head><body><header><h1>{title}</h1><p>{subtitle}</p></header><main>{''.join(parts)}</main></body></html>"""
