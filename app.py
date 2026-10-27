@@ -22,6 +22,13 @@ import streamlit as st
 
 from auto_parser import CREDIT_WORDS
 from bank_directory import BANKS, directory_table
+
+BANK_NAMES = {bank["name"] for bank in BANKS}
+# Shown on the welcome screen; the rest are behind "See all".
+FEATURED_BANKS = [
+    "Chase", "Bank of America", "Wells Fargo", "Citibank", "U.S. Bank", "PNC Bank", "Truist", "Capital One",
+    "TD Bank", "Navy Federal Credit Union", "USAA", "American Express", "Discover",
+]
 from financial_statements import build_financial_statements
 from statement_parser import BUILT_IN_FORMAT_NAMES, ParseResult, analyze_statement, parse_statement
 from template_manager import delete_template, extract_preview_text, load_templates, save_template
@@ -101,6 +108,13 @@ st.markdown(
                     align-items: center; justify-content: center; margin-bottom: 0.7rem;}}
     .feature h4 {{margin: 0 0 0.3rem 0; font-size: 0.98rem; color: {NAVY};}}
     .feature p {{margin: 0; font-size: 0.86rem; color: #5B6575; line-height: 1.45;}}
+    .banks-panel {{background: #F7F9FC; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1rem 1.15rem; margin-top: 0.9rem;}}
+    .banks-panel h4 {{margin: 0 0 0.25rem 0; font-size: 0.98rem; color: {NAVY};}}
+    .banks-panel p {{margin: 0 0 0.6rem 0; font-size: 0.86rem; color: #5B6575;}}
+    .bank-chips {{display: flex; flex-wrap: wrap; gap: 0.4rem;}}
+    .bank-chip {{font-size: 0.8rem; font-weight: 500; color: {NAVY}; background: #FFFFFF; border: 1px solid #D5DCE8;
+                 border-radius: 999px; padding: 0.22rem 0.7rem;}}
+    .bank-chip.more {{background: {NAVY}; color: #FFFFFF; border-color: {NAVY};}}
 
     .kpi-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 0.6rem 0 1rem 0;}}
     .kpi {{background: #FFFFFF; border: 1px solid #E3E7EE; border-top: 3px solid {NAVY}; border-radius: 12px;
@@ -163,7 +177,7 @@ elif st.context.headers.get("Host", "").split(":")[0] in ("localhost", "127.0.0.
     privacy_note = "Private: runs on your computer"
 
 pills = [f'<span class="pill pill-gold">🔒 {privacy_note}</span>'] if privacy_note else []
-pills += ['<span class="pill">Reads any bank</span>', '<span class="pill">Checks every balance</span>', '<span class="pill">Excel workpapers</span>']
+pills += [f'<span class="pill">{len(BANKS)} banks recognized</span>', '<span class="pill">Reads any bank</span>', '<span class="pill">Checks every balance</span>', '<span class="pill">Excel workpapers</span>']
 st.markdown(
     f"""
     <div class="brand">
@@ -522,7 +536,11 @@ if has_uploads:
         else:
             layout = str(result.transactions["bank_format"].iloc[0])
             layout = BUILT_IN_FORMAT_NAMES.get(layout, layout.replace("auto:", "Auto-detected: ").replace("custom:", "Saved bank: "))
-            layout = layout.replace("Auto-detected: unknown", "Auto-detected")
+            # Say plainly whether the bank is on the built-in list.
+            if layout.startswith("Auto-detected: ") and layout[len("Auto-detected: "):] in BANK_NAMES:
+                layout = f"<b>Recognized: {layout[len('Auto-detected: '):]}</b>"
+            elif layout.startswith("Auto-detected"):
+                layout = "Read automatically (bank not on the built-in list)"
             statements = result.transactions["statement_id"].nunique()
             found = f"{statements} statements · " if statements > 1 else ""
             remarks = "".join(f" · {note}" for note in result.notes if "black boxes" not in note.lower())
@@ -588,6 +606,17 @@ with overview_tab:
             + "</div>",
             unsafe_allow_html=True,
         )
+        # Make the built-in bank list visible before anyone uploads anything.
+        chips = "".join(f'<span class="bank-chip">{name}</span>' for name in FEATURED_BANKS)
+        st.markdown(
+            f'<div class="banks-panel"><h4>Banks it recognizes</h4>'
+            f"<p>{len(BANKS)} banks, credit unions and card issuers are recognized by name. Statements from any other "
+            f"bank are still read automatically.</p><div class=\"bank-chips\">{chips}"
+            f'<span class="bank-chip more">+ {len(BANKS) - len(FEATURED_BANKS)} more</span></div></div>',
+            unsafe_allow_html=True,
+        )
+        with st.expander(f"See all {len(BANKS)} recognized banks"):
+            st.dataframe(pd.DataFrame(directory_table()), use_container_width=True, hide_index=True, height=360)
     else:
         # Summary KPI cards: volume, risk, and cash flow totals.
         _kpis(
