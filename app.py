@@ -278,7 +278,7 @@ st.markdown(
     .stFormSubmitButton > button[kind="secondaryFormSubmit"]:hover, .stLinkButton > a[kind="secondary"]:hover {{border-color: {BLUE}; background: {BLUE_TINT}; color: {NAVY};}}
     [data-testid="stExpander"] details {{background: #FFFFFF; border: 1px solid #E1E5EB; border-radius: 10px;}}
     [data-testid="stDataFrame"], [data-testid="stDataEditor"] {{background: #FFFFFF; border-radius: 10px; box-shadow: 0 2px 8px rgba(29, 40, 68, 0.05);}}
-    /* Sidebar, footer and the "Free, always" note. */
+    /* Sidebar, footer and the license note on the welcome screen. */
     section[data-testid="stSidebar"] {{background: linear-gradient(180deg, {BLUE_TINT} 0%, #F1F4F8 100%); border-right: 1px solid {BLUE_LINE};}}
     section[data-testid="stSidebar"] h4 {{color: {NAVY}; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
                                           border-bottom: 1px solid {BLUE_LINE}; padding-bottom: 0.35rem; margin-top: 0.6rem;}}
@@ -287,8 +287,6 @@ st.markdown(
     .free-note {{display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin-top: 0.9rem; padding: 0.75rem 1rem;
                   background: {BLUE_TINT}; border: 1px solid {BLUE_LINE}; border-radius: 12px; font-size: 0.88rem; color: #1F2937;}}
     .free-copy {{margin-left: auto; color: #4B5563; font-size: 0.82rem; white-space: nowrap;}}
-    .free-badge {{background: {NAVY}; color: #FFFFFF; font-weight: 600; font-size: 0.78rem; letter-spacing: 0.04em;
-                   padding: 0.2rem 0.65rem; border-radius: 999px; white-space: nowrap;}}
     .app-footer a {{color: #FFFFFF !important; text-decoration: none; border-bottom: 1px solid rgba(255,255,255,0.4);}}
     </style>
     """,
@@ -977,9 +975,10 @@ with overview_tab:
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="free-note"><span class="free-badge">Free, always</span>'
-            "<span>Free for universities, students and investigators, for real casework and teaching. Open source under the "
-            '<a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer">Apache License 2.0</a>.</span>'
+            '<div class="free-note">'
+            "<span>Open source under the "
+            '<a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer">Apache License 2.0</a>:'
+            " free for universities, students and investigators to use for casework and teaching.</span>"
             f'<span class="free-copy">© 2026 {ORG_NAME}</span></div>',
             unsafe_allow_html=True,
         )

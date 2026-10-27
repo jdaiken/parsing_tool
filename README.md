@@ -171,7 +171,7 @@ The `demo/` folder holds a fictional elder-financial-exploitation case: three mo
 
 ## License
 
-Free, always: Bank Statement Analyzer is released under the [Apache License 2.0](LICENSE). Anyone, including universities, students and investigators, may use, copy, modify, host and share it at no cost, for real casework or teaching. Copyright 2026 Justice for Fraud Victims Project; see [NOTICE](NOTICE) for third-party components.
+Bank Statement Analyzer is released under the [Apache License 2.0](LICENSE). Anyone, including universities, students and investigators, may use, copy, modify, host and share it at no cost, for real casework or teaching. Copyright 2026 Justice for Fraud Victims Project; see [NOTICE](NOTICE) for third-party components.
 
 ## Branding
 

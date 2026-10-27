@@ -24,7 +24,6 @@ body { margin: 0; font-family: "Inter", system-ui, sans-serif; font-size: 10.5pt
 .cover h1 { font-family: "Cormorant Garamond", Georgia, serif; font-style: italic; font-weight: 600; font-size: 46pt; line-height: 1.02; margin: 0.18in 0 0.12in; color: #fff; }
 .cover .subtitle { font-family: "Jost", sans-serif; font-weight: 300; font-size: 16pt; margin: 0; max-width: 5.6in; }
 .cover .meta { position: absolute; left: 0.85in; bottom: 0.8in; font-family: "Jost", sans-serif; font-size: 10.5pt; line-height: 1.7; }
-.cover .free { display: inline-block; background: var(--navy); color: #fff; padding: 0.04in 0.16in; border-radius: 999px; font-weight: 600; letter-spacing: 0.03em; margin-bottom: 0.1in; }
 .cover-foot { background: var(--navy); color: #D6DEE8; padding: 0.28in 0.85in; font-size: 9pt; display: flex; justify-content: space-between; }
 
 /* Contents */
