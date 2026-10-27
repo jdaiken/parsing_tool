@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -8,8 +9,9 @@ from typing import Dict, List, Optional, Tuple
 import pdfplumber
 
 
-TEMPLATES_PATH = Path(__file__).with_name("statement_templates.json")
-ALLOWED_PARSE_STYLES = {"slash_leading_amount_balance", "date_dash_last_amount"}
+# The browser build points this at browser storage so saved templates survive a page reload.
+TEMPLATES_PATH = Path(os.environ.get("STATEMENT_TEMPLATES_PATH") or Path(__file__).with_name("statement_templates.json"))
+ALLOWED_PARSE_STYLES = {"auto", "slash_leading_amount_balance", "date_dash_last_amount"}
 ALLOWED_DIRECTIONS = {"credit", "debit"}
 
 
@@ -96,6 +98,7 @@ def save_template(template: Dict) -> Tuple[bool, str]:
     else:
         templates[existing_idx] = candidate
 
+    TEMPLATES_PATH.parent.mkdir(parents=True, exist_ok=True)
     TEMPLATES_PATH.write_text(json.dumps(templates, indent=2), encoding="utf-8")
     if existing_idx is None:
         return True, "Template saved."

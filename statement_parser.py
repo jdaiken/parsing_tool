@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 import pdfplumber
 
+from auto_parser import auto_parse, suggest_bank_name, suggest_detection_keywords
 from template_manager import detect_template, load_templates
 
 AMOUNT_RE = re.compile(r"\$?\d[\d,]*\.\d{2}")
@@ -558,6 +559,55 @@ def _build_flags(df: pd.DataFrame, large_txn_threshold: float) -> pd.DataFrame:
     return flags_df.sort_values(["severity", "flag_type"]).reset_index(drop=True)
 
 
+@dataclass
+class StatementAnalysis:
+    """What the app learned from one uploaded statement, for the one-click template flow."""
+
+    has_text: bool
+    built_in_format: Optional[str]
+    matched_template: Optional[str]
+    bank_name: Optional[str]
+    detection_keywords: List[str]
+    confidence: str
+    has_balance_column: bool
+    balance_rows: int
+    balance_verified_rows: int
+    preview: pd.DataFrame
+
+
+BUILT_IN_FORMAT_NAMES = {
+    "carson_bank_statement": "Carson Bank (built in)",
+    "legacy_sectioned_statement": "Connections Checking (built in)",
+}
+
+
+def analyze_statement(file_name: str, file_bytes: bytes) -> StatementAnalysis:
+    """Read a statement with the generic reader and suggest a template for it."""
+    pages = _extract_pdf_pages(file_bytes)
+    full_text = "\n".join(pages)
+    meta = _parse_meta(full_text)
+    fmt = _detect_format(full_text)
+    matched = detect_template(full_text, load_templates())
+    output = auto_parse(pages, file_name.rsplit(".", 1)[0], meta.get("account_number"), meta.get("statement_date"))
+    preview = pd.DataFrame(output.rows)
+    if not preview.empty:
+        preview = preview[["txn_date", "description", "debit", "credit", "running_balance"]]
+        preview["txn_date"] = pd.to_datetime(preview["txn_date"], errors="coerce").dt.date
+    bank_name = output.bank_name or suggest_bank_name(full_text)
+    return StatementAnalysis(
+        has_text=bool(full_text.strip()),
+        built_in_format=BUILT_IN_FORMAT_NAMES.get(fmt),
+        matched_template=matched["template_name"] if matched else None,
+        bank_name=bank_name,
+        detection_keywords=output.detection_keywords or suggest_detection_keywords(full_text, bank_name),
+        confidence=output.confidence,
+        has_balance_column=output.has_balance_column,
+        balance_rows=output.balance_rows,
+        balance_verified_rows=output.balance_verified_rows,
+        preview=preview,
+    )
+
+
 def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: float = 1000.0) -> ParseResult:
     pages = _extract_pdf_pages(file_bytes)
     full_text = "\n".join(pages)
@@ -570,18 +620,30 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
     account_number = meta.get("account_number")
     statement_date = meta.get("statement_date")
 
-    if matched_template:
+    if matched_template and matched_template.get("parse_style") == "auto":
+        rows = auto_parse(
+            pages,
+            statement_id,
+            account_number,
+            statement_date,
+            bank_format=f"custom:{matched_template['template_name']}",
+            default_direction=matched_template.get("default_direction", "debit"),
+            credit_keywords=matched_template.get("credit_keywords") or None,
+        ).rows
+    elif matched_template:
         rows = _parse_custom_lines(pages, statement_id, account_number, statement_date, matched_template)
         if not rows:
-            rows = _parse_carson_lines(pages, statement_id, account_number, statement_date)
-            rows.extend(_parse_legacy_lines(pages, statement_id, account_number, statement_date))
+            rows = auto_parse(pages, statement_id, account_number, statement_date).rows
     elif fmt == "carson_bank_statement":
         rows = _parse_carson_lines(pages, statement_id, account_number, statement_date)
     elif fmt == "legacy_sectioned_statement":
         rows = _parse_legacy_lines(pages, statement_id, account_number, statement_date)
     else:
-        rows = _parse_carson_lines(pages, statement_id, account_number, statement_date)
-        rows.extend(_parse_legacy_lines(pages, statement_id, account_number, statement_date))
+        # Unknown layout: read it generically instead of requiring a template first.
+        rows = auto_parse(pages, statement_id, account_number, statement_date).rows
+        if not rows:
+            rows = _parse_carson_lines(pages, statement_id, account_number, statement_date)
+            rows.extend(_parse_legacy_lines(pages, statement_id, account_number, statement_date))
 
     tx_columns = [
         "statement_id",

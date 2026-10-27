@@ -1,5 +1,5 @@
 """
-Streamlit front-end for the Statement Workpaper Parser.
+Streamlit front-end for Bank Statement Analyzer.
 
 Upload bank statement PDFs, parse transactions, review risk/reconciliation
 dashboards, export Excel workpapers, and manage custom bank-format templates.
@@ -7,6 +7,7 @@ dashboards, export Excel workpapers, and manage custom bank-format templates.
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime
 from io import BytesIO
 from typing import List
@@ -14,38 +15,78 @@ from typing import List
 import pandas as pd
 import streamlit as st
 
+from auto_parser import CREDIT_WORDS
 from financial_statements import build_financial_statements
-from statement_parser import ParseResult, parse_statement
+from statement_parser import BUILT_IN_FORMAT_NAMES, ParseResult, analyze_statement, parse_statement
 from template_manager import delete_template, extract_preview_text, load_templates, save_template
 from workpaper_export import build_workpaper
 
 # --- Page setup and branding ---
 
-st.set_page_config(page_title="Statement Workpaper Parser", page_icon=":bar_chart:", layout="wide")
+# Change these to rebrand the app; the colors also live in .streamlit/config.toml and index.html.
+APP_NAME = "Bank Statement Analyzer"
+APP_TAGLINE = "Turn bank statement PDFs into forensic accounting workpapers in minutes."
+ORG_NAME = "Justice for Fraud Victims Project"
+NAVY = "#14284B"
+GOLD = "#C9A227"
 
-# Inject custom CSS for layout spacing and card-style sections.
+st.set_page_config(page_title=APP_NAME, page_icon=":material/account_balance:", layout="wide")
+
 st.markdown(
-    """
+    f"""
     <style>
-    .block-container {padding-top: 1.2rem; padding-bottom: 1.2rem;}
-    .hero {border: 1px solid #E5E7EB; border-radius: 14px; padding: 1rem 1.2rem;
-           background: linear-gradient(120deg, #F8FAFC 0%, #EEF2FF 100%); margin-bottom: 1rem;}
-    .guide {border: 1px solid #D1D5DB; border-radius: 12px; padding: 0.75rem 0.85rem;
-            background: #F9FAFB; margin: 0.6rem 0;}
-    .section-card {border: 1px solid #E5E7EB; border-radius: 12px; padding: 0.75rem 0.9rem; background: #FFFFFF;}
+    #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], footer {{visibility: hidden; height: 0;}}
+    .block-container {{padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1200px;}}
+    .brand-bar {{display: flex; align-items: center; gap: 0.9rem; background: {NAVY}; color: #FFFFFF;
+                 border-radius: 12px; padding: 1.1rem 1.4rem; border-bottom: 4px solid {GOLD};}}
+    .brand-mark {{width: 44px; height: 44px; flex: none; border-radius: 10px; background: {GOLD};
+                  display: flex; align-items: center; justify-content: center;}}
+    .brand-org {{font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: #E8D9A8; margin: 0;}}
+    .brand-name {{font-size: 1.55rem; font-weight: 700; margin: 0.1rem 0 0 0; color: #FFFFFF; line-height: 1.2;}}
+    .brand-tagline {{font-size: 0.95rem; color: #D6DEEB; margin: 0.2rem 0 0 0;}}
+    .privacy {{margin: 0.7rem 0 1.1rem 0; padding: 0.55rem 0.9rem; border-radius: 8px; font-size: 0.88rem;
+               background: #EEF6F1; color: #1E5A3C; border: 1px solid #CFE6D8;}}
+    .steps {{counter-reset: step; list-style: none; padding: 0; margin: 0.4rem 0 1rem 0;}}
+    .steps li {{counter-increment: step; display: flex; gap: 0.6rem; align-items: baseline; margin: 0.45rem 0;
+                font-size: 0.92rem; color: #1F2937;}}
+    .steps li::before {{content: counter(step); flex: none; width: 1.45rem; height: 1.45rem; border-radius: 50%;
+                        background: {NAVY}; color: #FFFFFF; font-size: 0.78rem; font-weight: 600;
+                        display: inline-flex; align-items: center; justify-content: center;}}
+    .section-card {{border: 1px solid #E3E7EE; border-left: 4px solid {GOLD}; border-radius: 8px;
+                    padding: 0.8rem 1rem; background: #FFFFFF; color: #1F2937; margin-bottom: 0.8rem;}}
+    .app-footer {{margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid #E3E7EE;
+                  font-size: 0.8rem; color: #6B7280; text-align: center;}}
+    div[data-testid="stMetric"] {{background: #F7F9FC; border: 1px solid #E3E7EE; border-radius: 10px; padding: 0.7rem 0.9rem;}}
+    .stTabs [data-baseweb="tab-list"] {{gap: 0.25rem;}}
+    .stTabs [data-baseweb="tab"] {{font-weight: 600;}}
     </style>
     """,
     unsafe_allow_html=True,
 )
-# Hero banner shown at the top of the main content area.
+
+# Where the app is running decides what we can promise about the uploaded files.
+privacy_note = ""
+if sys.platform == "emscripten":
+    privacy_note = "🔒 Private by design: this app runs inside your browser, so statements you upload never leave your computer."
+elif st.context.headers.get("Host", "").split(":")[0] in ("localhost", "127.0.0.1"):
+    privacy_note = "🔒 Private by design: this app is running on your own computer, so statements you upload stay here."
+
 st.markdown(
-    """
-    <div class="hero">
-      <h2 style="margin:0; color:#111827;">Bank Statement to Forensic Workpaper</h2>
-      <p style="margin:0.4rem 0 0 0; color:#374151;">
-        Upload statements, review dashboards, reconcile balances, and export workpapers.
-      </p>
+    f"""
+    <div class="brand-bar">
+      <div class="brand-mark">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{NAVY}" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3v18M5 21h14M4 7h16M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-org">{ORG_NAME}</div>
+        <div class="brand-name">{APP_NAME}</div>
+        <div class="brand-tagline">{APP_TAGLINE}</div>
+      </div>
     </div>
+    {f'<div class="privacy">{privacy_note}</div>' if privacy_note else '<div style="height:1rem"></div>'}
     """,
     unsafe_allow_html=True,
 )
@@ -92,6 +133,7 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(
             columns=[
                 "statement_id",
+                "account_number",
                 "beginning_balance",
                 "total_credits",
                 "total_debits",
@@ -103,7 +145,8 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
             ]
         )
     rows = []
-    for statement_id, grp in transactions.groupby("statement_id", dropna=False):
+    # One row per account: a single PDF can hold several accounts (e.g. checking plus a credit line).
+    for (statement_id, account_number), grp in transactions.groupby(["statement_id", "account_number"], dropna=False):
         # Preserve statement order: date, then PDF page/line position.
         ordered = grp.sort_values(["txn_date", "source_page", "source_line"]).copy()
         credits = float(pd.to_numeric(ordered["credit"], errors="coerce").fillna(0).sum())
@@ -136,6 +179,7 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
         rows.append(
             {
                 "statement_id": statement_id,
+                "account_number": account_number,
                 "beginning_balance": beginning_balance,
                 "total_credits": credits,
                 "total_debits": debits,
@@ -146,23 +190,33 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
                 "notes": notes,
             }
         )
-    return pd.DataFrame(rows).sort_values("statement_id").reset_index(drop=True)
+    return pd.DataFrame(rows).sort_values(["statement_id", "account_number"]).reset_index(drop=True)
 
 
 # --- Sidebar: global options that affect parsing and export ---
 
 with st.sidebar:
-    st.subheader("Guided Workflow")
-    st.markdown('<div class="guide">1) Upload PDFs<br>2) Review dashboard<br>3) Export files</div>', unsafe_allow_html=True)
-    # Whether the exported workpaper includes a tab of raw PDF text per page.
-    include_raw_text = st.checkbox("Include raw extracted text tab", value=True)
+    st.markdown("#### How it works")
+    st.markdown(
+        '<ol class="steps"><li>Upload bank statement PDFs</li><li>Review transactions, red flags and the bank reconciliation</li>'
+        "<li>Download your Excel workpapers</li></ol>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("#### Settings")
     # Dollar amount above which transactions are flagged as "large" during parsing.
-    large_txn_threshold = st.number_input("Large transaction threshold ($)", min_value=100.0, value=1000.0, step=100.0)
-    st.caption(f"Custom templates loaded: {len(load_templates())}")
+    large_txn_threshold = st.number_input("Flag transactions over ($)", min_value=100.0, value=1000.0, step=100.0)
+    # Whether the exported workpaper includes a tab of raw PDF text per page.
+    include_raw_text = st.checkbox("Include full statement text in the workpaper", value=False)
+    st.caption(f"Banks you've added: {len(load_templates())}")
 
 # --- File upload and parsing ---
 
-uploads = st.file_uploader("Upload statement PDF files", type=["pdf"], accept_multiple_files=True)
+uploads = st.file_uploader(
+    "Upload bank statement PDFs",
+    type=["pdf"],
+    accept_multiple_files=True,
+    help="Use the PDF downloaded from online banking. Scanned paper statements can't be read.",
+)
 has_uploads = bool(uploads)
 
 # Empty DataFrame schemas used before any files are parsed.
@@ -208,6 +262,17 @@ if has_uploads:
         st.error("Some files could not be parsed:")
         for err in parse_errors:
             st.write(f"- {err}")
+    # Tell the user, file by file, how each statement was read.
+    for uploaded_file, result in zip([u for u in uploads if not any(e.startswith(f"{u.name}:") for e in parse_errors)], results):
+        if result.transactions.empty:
+            if not "".join(result.raw_text.get("text", pd.Series(dtype=str)).fillna("")).strip():
+                st.warning(f"{uploaded_file.name}: no readable text. It looks like a scanned image; use the bank's downloaded PDF instead.")
+            else:
+                st.warning(f"{uploaded_file.name}: no transactions found. Try it in the Template Manager tab to see what the app can read.")
+        else:
+            layout = str(result.transactions["bank_format"].iloc[0])
+            layout = BUILT_IN_FORMAT_NAMES.get(layout, layout.replace("auto:", "auto-detected: ").replace("custom:", "template: "))
+            st.caption(f"✅ {uploaded_file.name}: {len(result.transactions)} transactions ({layout})")
     if results:
         # Merge parsed output from all successfully processed statements.
         all_transactions = pd.concat([r.transactions for r in results], ignore_index=True)
@@ -230,7 +295,7 @@ reconciliation_df = _build_reconciliation_table(all_transactions)
 # --- Main tabbed UI ---
 
 overview_tab, transactions_tab, risk_tab, reconciliation_tab, export_tab, template_tab = st.tabs(
-    ["Overview", "Transactions", "Risk and Flags", "Reconciliation", "Export Files", "Template Manager"]
+    ["Summary", "Transactions", "Red Flags", "Bank Reconciliation", "Download Workpapers", "Add a New Bank"]
 )
 
 with overview_tab:
@@ -250,11 +315,11 @@ with overview_tab:
         category_chart = all_transactions["txn_category"].value_counts().rename_axis("category").reset_index(name="count")
         category_chart["category"] = category_chart["category"].map(_display_category_name)
         c1.markdown("#### Categories")
-        c1.bar_chart(category_chart.set_index("category"))
+        c1.bar_chart(category_chart.set_index("category"), color=NAVY)
         # Fixed order so low/medium/high always appear even when a level has zero rows.
         risk_chart = all_transactions["risk_level"].value_counts().reindex(["high", "medium", "low"], fill_value=0).rename_axis("risk").to_frame("count")
         c2.markdown("#### Risk Levels")
-        c2.bar_chart(risk_chart)
+        c2.bar_chart(risk_chart, color=GOLD)
 
 with transactions_tab:
     if not has_uploads or all_transactions.empty:
@@ -306,7 +371,7 @@ with reconciliation_tab:
         rec = reconciliation_df.copy()
         rec["status_badge"] = rec["status"].map(lambda s: "🟢 Reconciled" if s == "Reconciled" else ("🔴 Variance" if s == "Variance" else "🟠 Needs Review"))
         st.dataframe(
-            rec[["statement_id", "beginning_balance", "total_credits", "total_debits", "expected_ending_balance", "ending_balance", "reconciliation_difference", "status_badge", "notes"]],
+            rec[["statement_id", "account_number", "beginning_balance", "total_credits", "total_debits", "expected_ending_balance", "ending_balance", "reconciliation_difference", "status_badge", "notes"]],
             use_container_width=True,
             hide_index=True,
             height=360,
@@ -324,20 +389,81 @@ with export_tab:
         d2.download_button("Download Financial Statements (.xlsx)", data=BytesIO(financial_bytes).getvalue(), file_name=f"financial_statements_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 with template_tab:
-    # Template manager lets non-developers register new bank PDF layouts without code changes.
-    st.markdown("#### Hybrid System: Template Manager")
+    # One-click onboarding: upload a statement from a new bank, check what was read, save it.
+    st.markdown("#### Add a new bank")
     st.markdown(
-        '<div class="section-card">Nontechnical onboarding: add a new statement format by keywords + parser style. No code changes needed for most new formats.</div>',
+        '<div class="section-card">Most statements are read automatically, even from banks the app has never seen. '
+        "To save a bank so it's always recognized, upload one of its statements, check the preview, and click "
+        "<b>Save this bank</b>. No setup or typing needed.</div>",
         unsafe_allow_html=True,
     )
+    sample_upload = st.file_uploader("Upload one statement from the bank", type=["pdf"], key="template_sample_upload")
+    if sample_upload is not None:
+        analysis = analyze_statement(sample_upload.name, sample_upload.getvalue())
+        if not analysis.has_text:
+            st.error("This PDF has no readable text. It looks like a scanned image; use the PDF downloaded from online banking instead.")
+        elif analysis.preview.empty:
+            st.warning("No transactions found automatically. Use 'Advanced: set up a bank by hand' below.")
+        else:
+            if analysis.built_in_format:
+                st.success(f"Already supported: {analysis.built_in_format}. Nothing to set up: just upload it at the top of the page.")
+            elif analysis.matched_template:
+                st.success(f"Already saved as \"{analysis.matched_template}\".")
+            confidence_text = {
+                "high": "🟢 Looks right: every running balance checks out",
+                "medium": "🟠 Probably right: spot-check the rows below",
+                "low": "🔴 Check carefully: some rows may be misread",
+            }.get(analysis.confidence, "⚪ Unknown")
+            st.markdown(f"##### {analysis.bank_name or 'Bank name not found'}")
+            m2, m3 = st.columns(2)
+            m2.metric("Transactions found", len(analysis.preview))
+            if analysis.has_balance_column:
+                m3.metric(
+                    "Balances that check out",
+                    f"{analysis.balance_verified_rows} of {analysis.balance_rows}",
+                    help="Each row's running balance should equal the previous balance plus or minus the amount.",
+                )
+            else:
+                m3.metric("Balances that check out", "n/a", help="This statement has no running balance column.")
+            st.markdown(f"**{confidence_text}**")
+            st.dataframe(
+                analysis.preview.head(15).rename(
+                    columns={"txn_date": "Date", "description": "Description", "debit": "Debit", "credit": "Credit", "running_balance": "Balance"}
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            if not analysis.built_in_format and not analysis.matched_template:
+                with st.form("auto_template_form"):
+                    auto_name = st.text_input("Bank name", value=analysis.bank_name or "")
+                    save_clicked = st.form_submit_button("Save this bank", type="primary")
+                keywords = analysis.detection_keywords or ([auto_name.strip().lower()] if auto_name.strip() else [])
+                st.caption(f"Statements that contain: {', '.join(repr(k) for k in keywords) or '(nothing yet)'} will be recognized as this bank.")
+                if save_clicked:
+                    ok, msg = save_template(
+                        {
+                            "template_name": auto_name,
+                            "detection_keywords": keywords,
+                            "parse_style": "auto",
+                            "default_direction": "debit",
+                            "credit_keywords": list(CREDIT_WORDS),
+                        }
+                    )
+                    if ok:
+                        st.success("Saved. Statements from this bank will now be recognized automatically.")
+                    else:
+                        st.error(msg)
+
     templates = load_templates()
+    st.markdown("##### Saved banks")
     if templates:
         st.dataframe(
             pd.DataFrame(
                 [
                     {
-                        "Template": t["template_name"],
-                        "Parse Style": t["parse_style"],
+                        "Bank": t["template_name"],
+                        "Parse Style": "Automatic" if t["parse_style"] == "auto" else t["parse_style"],
                         "Default Direction": t["default_direction"],
                         "Detection Keywords": ", ".join(t["detection_keywords"]),
                     }
@@ -346,50 +472,50 @@ with template_tab:
             ),
             use_container_width=True,
             hide_index=True,
-            height=220,
         )
-    else:
-        st.info("No custom templates saved yet.")
-
-    st.markdown("##### Add or Update Template")
-    sample_upload = st.file_uploader("Optional: Upload sample statement for preview", type=["pdf"], key="template_sample_upload")
-    if sample_upload is not None:
-        # Show raw text extracted from a sample PDF to help pick keywords and parse style.
-        st.text_area("Extracted preview text", value=extract_preview_text(sample_upload.getvalue()), height=180)
-
-    with st.form("template_form", clear_on_submit=False):
-        template_name = st.text_input("Template name", placeholder="Example: First National Monthly")
-        detection_keywords_text = st.text_input("Detection keywords (comma-separated)", placeholder="first national, account summary")
-        parse_style = st.selectbox(
-            "Parse style",
-            options=["slash_leading_amount_balance", "date_dash_last_amount"],
-            help="Use slash style for lines beginning with MM/DD/YYYY. Use dash style for MM-DD dates inside lines.",
-        )
-        default_direction = st.selectbox("Default transaction direction", options=["debit", "credit"])
-        credit_keywords_text = st.text_input("Credit keywords (comma-separated)", value="deposit,credit,refund,reversal")
-        submitted = st.form_submit_button("Save template")
-    if submitted:
-        payload = {
-            "template_name": template_name,
-            "detection_keywords": [part.strip() for part in detection_keywords_text.split(",") if part.strip()],
-            "parse_style": parse_style,
-            "default_direction": default_direction,
-            "credit_keywords": [part.strip() for part in credit_keywords_text.split(",") if part.strip()],
-        }
-        ok, msg = save_template(payload)
-        if ok:
-            st.success(msg)
-            st.rerun()
-        else:
-            st.error(msg)
-
-    if templates:
-        st.markdown("##### Delete Template")
-        delete_name = st.selectbox("Choose template to delete", [t["template_name"] for t in templates], key="delete_template")
-        if st.button("Delete selected template"):
+        delete_name = st.selectbox("Remove a saved bank", [t["template_name"] for t in templates], key="delete_template")
+        if st.button("Remove"):
             ok, msg = delete_template(delete_name)
             if ok:
                 st.success(msg)
                 st.rerun()
             else:
                 st.error(msg)
+    else:
+        st.info("No banks saved yet. Built-in and auto-detected banks work without saving.")
+
+    with st.expander("Advanced: set up a bank by hand"):
+        if sample_upload is not None:
+            # Show raw text extracted from the uploaded PDF to help pick keywords and parse style.
+            st.text_area("Extracted preview text", value=extract_preview_text(sample_upload.getvalue()), height=180)
+        with st.form("template_form", clear_on_submit=False):
+            template_name = st.text_input("Template name", placeholder="Example: First National Monthly")
+            detection_keywords_text = st.text_input("Detection keywords (comma-separated)", placeholder="first national, account summary")
+            parse_style = st.selectbox(
+                "Parse style",
+                options=["auto", "slash_leading_amount_balance", "date_dash_last_amount"],
+                format_func=lambda style: "Automatic (recommended)" if style == "auto" else style,
+                help="Automatic reads most layouts. Use slash style for lines beginning with MM/DD/YYYY, dash style for MM-DD dates inside lines.",
+            )
+            default_direction = st.selectbox("Default transaction direction", options=["debit", "credit"])
+            credit_keywords_text = st.text_input("Credit keywords (comma-separated)", value="deposit,credit,refund,reversal")
+            submitted = st.form_submit_button("Save template")
+        if submitted:
+            payload = {
+                "template_name": template_name,
+                "detection_keywords": [part.strip() for part in detection_keywords_text.split(",") if part.strip()],
+                "parse_style": parse_style,
+                "default_direction": default_direction,
+                "credit_keywords": [part.strip() for part in credit_keywords_text.split(",") if part.strip()],
+            }
+            ok, msg = save_template(payload)
+            if ok:
+                st.success(msg)
+                st.rerun()
+            else:
+                st.error(msg)
+
+st.markdown(
+    f'<div class="app-footer">{APP_NAME} · {ORG_NAME} · Built for forensic accounting education</div>',
+    unsafe_allow_html=True,
+)
