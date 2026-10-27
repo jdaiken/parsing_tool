@@ -49,6 +49,11 @@ NAVY = "#1D2844"  # scales badge
 BLUE = "#246094"  # "JFVP" lettering
 TAUPE = "#918E81"  # quote panel
 LIGHT = "#F3F3F3"  # header bar
+ORG_URL = "https://www.justiceforfraudvictimsproject.org/"
+# Shades of the palette used to separate areas of the page.
+PAGE_BG = "#F4F5F7"  # light gray page behind the white cards
+BLUE_TINT = "#E8EFF6"  # pale blue for icons, highlights and the sidebar
+BLUE_LINE = "#C5D4E3"  # blue-gray borders
 RISK_COLORS = {"High": "#B42318", "Medium": "#D97706", "Low": "#15803D"}
 
 APP_DIR = Path(__file__).resolve().parent
@@ -77,7 +82,10 @@ def _logo_html() -> str:
         path = APP_DIR / "assets" / name
         if path.exists():
             encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-            return f'<img class="brand-logo" src="data:{mime};base64,{encoded}" alt="{ORG_NAME} logo">'
+            return (
+                f'<a class="brand-link" href="{ORG_URL}" target="_blank" rel="noopener noreferrer" title="Visit {ORG_NAME}">'
+                f'<img class="brand-logo" src="data:{mime};base64,{encoded}" alt="{ORG_NAME} logo"></a>'
+            )
     return (
         f'<div class="brand-mark"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" '
         'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
@@ -92,7 +100,12 @@ st.markdown(
     .stApp, .stApp p, .stApp label, .stApp button, .stApp input, .stApp textarea, .stApp li, .stApp h1, .stApp h2,
     .stApp h3, .stApp h4, .stApp h5, .stApp [data-baseweb="tab"] {{
         font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;}}
+    .stApp {{background: {PAGE_BG};}}
     .stApp a {{color: {BLUE};}}
+    /* Inputs stay white so they stand out on the gray page. */
+    .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"], .stApp [data-baseweb="select"] > div,
+    .stApp [data-testid="stNumberInputContainer"], .stApp [data-baseweb="input"] input, .stApp textarea {{background: #FFFFFF;}}
+    .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"], .stApp [data-baseweb="select"] > div {{border-color: {BLUE_LINE};}}
     .stApp [data-testid="stIconMaterial"] {{font-family: 'Material Symbols Rounded' !important;}}
     /* Hide Streamlit's menu and decoration, but not the toolbar itself: it holds the button that reopens the sidebar. */
     #MainMenu, [data-testid="stToolbarActions"], [data-testid="stDecoration"], footer {{visibility: hidden; height: 0;}}
@@ -101,9 +114,11 @@ st.markdown(
     .block-container {{padding-top: 3.2rem; padding-bottom: 2rem; max-width: 1180px;}}
     h1, h2, h3, h4, h5 {{color: {NAVY}; letter-spacing: -0.01em;}}
 
-    .brand {{border-radius: 14px; overflow: hidden; box-shadow: 0 8px 26px rgba(29, 40, 68, 0.14); border: 1px solid #E2E2E2;}}
+    .brand {{border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(29, 40, 68, 0.16); border: 1px solid #DADDE3;}}
     .brand-top {{display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-                 background: {LIGHT}; padding: 1.1rem 1.6rem; min-height: 92px;}}
+                 background: #FFFFFF; padding: 1.1rem 1.6rem; min-height: 92px; border-bottom: 4px solid {BLUE};}}
+    .brand-link {{display: block; flex: none; border-radius: 8px; transition: opacity 0.15s ease, transform 0.15s ease;}}
+    .brand-link:hover {{opacity: 0.85; transform: translateY(-1px);}}
     .brand-logo {{height: 64px; width: auto; flex: none; display: block; object-fit: contain;}}
     .brand-mark {{width: 52px; height: 52px; flex: none; border-radius: 50%; background: {NAVY};
                   display: flex; align-items: center; justify-content: center;}}
@@ -116,21 +131,23 @@ st.markdown(
     .brand-tagline {{font-family: 'Jost', system-ui, sans-serif; font-weight: 300; font-size: 1.08rem; color: #F4F2EC; margin-top: 0.45rem;}}
     .brand-privacy {{font-family: 'Jost', system-ui, sans-serif; font-weight: 400; font-size: 0.9rem; color: #FFFFFF; margin-top: 0.7rem;}}
 
-    .section-title {{font-family: 'Jost', system-ui, sans-serif; font-size: 1.15rem; font-weight: 500; color: {NAVY}; margin: 1.6rem 0 0.2rem 0;}}
-    .section-sub {{font-size: 0.9rem; color: #5B6575; margin-bottom: 0.6rem;}}
-    [data-testid="stFileUploaderDropzone"] {{border: 2px dashed #C9D3E3; background: #F7F9FC; border-radius: 12px;}}
+    .section-title {{font-family: 'Jost', system-ui, sans-serif; font-size: 1.15rem; font-weight: 500; color: {NAVY}; margin: 1.6rem 0 0.2rem 0;
+                     padding-left: 0.65rem; border-left: 4px solid {BLUE}; line-height: 1.25;}}
+    .section-sub {{font-size: 0.9rem; color: #5B6575; margin-bottom: 0.6rem; padding-left: calc(0.65rem + 4px);}}
+    [data-testid="stFileUploaderDropzone"] {{border: 2px dashed {BLUE_LINE}; background: #FFFFFF; border-radius: 12px;}}
+    [data-testid="stFileUploaderDropzone"]:hover {{border-color: {BLUE}; background: {BLUE_TINT};}}
 
     .feature-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.9rem; margin-top: 0.4rem;}}
-    .feature {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1.1rem 1.15rem;
-               box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);}}
-    .feature-icon {{width: 38px; height: 38px; border-radius: 10px; background: #EEF2F8; display: flex;
+    .feature {{background: #FFFFFF; border: 1px solid #E1E5EB; border-top: 3px solid {BLUE}; border-radius: 14px; padding: 1.1rem 1.15rem;
+               box-shadow: 0 2px 8px rgba(29, 40, 68, 0.06);}}
+    .feature-icon {{width: 38px; height: 38px; border-radius: 10px; background: {BLUE_TINT}; display: flex;
                     align-items: center; justify-content: center; margin-bottom: 0.7rem;}}
     .feature h4 {{margin: 0 0 0.3rem 0; font-size: 0.98rem; color: {NAVY};}}
     .feature p {{margin: 0; font-size: 0.86rem; color: #5B6575; line-height: 1.45;}}
 
     .kpi-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 0.6rem 0 1rem 0;}}
     .kpi {{background: #FFFFFF; border: 1px solid #E3E7EE; border-top: 3px solid {NAVY}; border-radius: 12px;
-           padding: 0.85rem 1rem; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);}}
+           padding: 0.85rem 1rem; box-shadow: 0 2px 8px rgba(29, 40, 68, 0.06);}}
     .kpi.gold {{border-top-color: {TAUPE};}}
     .kpi.blue {{border-top-color: {BLUE};}}
     .kpi.red {{border-top-color: {RISK_COLORS['High']};}}
@@ -141,21 +158,25 @@ st.markdown(
 
     .file-list {{display: flex; flex-direction: column; gap: 0.35rem; margin: 0.4rem 0 0.2rem 0;}}
     .file-row {{display: flex; align-items: center; gap: 0.6rem; font-size: 0.88rem; color: #1F2937;
-                background: #F7F9FC; border: 1px solid #E3E7EE; border-radius: 10px; padding: 0.45rem 0.75rem;}}
+                background: #FFFFFF; border: 1px solid #E1E5EB; border-left: 3px solid {BLUE}; border-radius: 10px; padding: 0.45rem 0.75rem;}}
     .file-row .meta {{color: #6B7280; margin-left: auto; font-size: 0.8rem;}}
     .status {{display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.6rem; border-radius: 999px;}}
     .status.ok {{background: #E7F6EC; color: #15803D;}}
     .status.warn {{background: #FEF3E2; color: #B45309;}}
     .status.bad {{background: #FDECEA; color: #B42318;}}
 
-    .recon-card {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1rem 1.15rem; margin-bottom: 0.8rem;}}
+    .recon-card {{background: #FFFFFF; border: 1px solid #E1E5EB; border-radius: 14px; padding: 1rem 1.15rem; margin-bottom: 0.8rem;
+                  box-shadow: 0 2px 8px rgba(29, 40, 68, 0.05);}}
+    .recon-head {{background: {LIGHT}; margin: -1rem -1.15rem 0.7rem -1.15rem; padding: 0.65rem 1.15rem; border-radius: 14px 14px 0 0;
+                  border-bottom: 1px solid #E1E5EB;}}
     .recon-head {{display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem;}}
     .recon-head .title {{font-weight: 600; color: {NAVY};}}
     .recon-math {{display: grid; grid-template-columns: 1fr auto; row-gap: 0.25rem; max-width: 420px;
                   font-size: 0.9rem; color: #374151; font-variant-numeric: tabular-nums;}}
     .recon-math .total {{border-top: 1px solid #D1D5DB; padding-top: 0.25rem; font-weight: 600; color: #111827;}}
     .findings {{display: grid; gap: 0.6rem; margin-bottom: 1rem;}}
-    .finding {{background: #FFFFFF; border: 1px solid #E3E7EE; border-left: 4px solid #D97706; border-radius: 12px; padding: 0.75rem 1rem;}}
+    .finding {{background: #FFFFFF; border: 1px solid #E1E5EB; border-left: 4px solid #D97706; border-radius: 12px; padding: 0.75rem 1rem;
+               box-shadow: 0 2px 8px rgba(29, 40, 68, 0.05);}}
     .finding.high {{border-left-color: #B42318;}}
     .finding.low {{border-left-color: #15803D;}}
     .finding-head {{display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;}}
@@ -171,14 +192,16 @@ st.markdown(
         background: #FFF7ED; border-radius: 6px; padding: 0.15rem 0.45rem; margin-top: 0.25rem;}}
     .status.muted {{background: #F3F4F6; color: #6B7280;}}
     .doc-warn {{color: #B42318;}}
-    .project-head {{background: #FFFFFF; border: 1px solid #E3E7EE; border-left: 4px solid {BLUE}; border-radius: 12px; padding: 0.8rem 1.1rem; margin-bottom: 0.6rem;}}
+    .project-head {{background: linear-gradient(100deg, {BLUE_TINT} 0%, #FFFFFF 70%); border: 1px solid #E1E5EB; border-left: 4px solid {BLUE};
+                    border-radius: 12px; padding: 0.8rem 1.1rem; margin-bottom: 0.6rem;}}
     .project-head .project-name {{color: {NAVY}; font-size: 1.3rem; font-weight: 600;}}
     .project-head p {{margin: 0.2rem 0; color: #374151; font-size: 0.9rem;}}
     .project-head span {{font-size: 0.78rem; color: #6B7280;}}
-    .side-note {{font-size: 0.85rem; color: #4B5563; margin-bottom: 0.4rem;}}
+    .stApp p.side-note {{font-size: 0.85rem; color: #4B5563; margin-bottom: 0.4rem; line-height: 1.45;}}
     .recon-note {{font-size: 0.82rem; color: #6B7280; margin-top: 0.5rem;}}
 
-    .download-card {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1.1rem 1.15rem; min-height: 150px;}}
+    .download-card {{background: #FFFFFF; border: 1px solid #E1E5EB; border-top: 3px solid {BLUE}; border-radius: 14px; padding: 1.1rem 1.15rem;
+                     min-height: 150px; box-shadow: 0 2px 8px rgba(29, 40, 68, 0.06);}}
     .download-card h4 {{margin: 0 0 0.3rem 0; color: {NAVY}; font-size: 1rem;}}
     .download-card p {{margin: 0 0 0.6rem 0; font-size: 0.86rem; color: #5B6575;}}
 
@@ -190,15 +213,29 @@ st.markdown(
                         display: inline-flex; align-items: center; justify-content: center;}}
     .section-card {{border: 1px solid #E3E7EE; border-left: 4px solid {BLUE}; border-radius: 10px;
                     padding: 0.85rem 1rem; background: #FFFFFF; color: #1F2937; margin-bottom: 0.8rem;}}
-    .stTabs [data-baseweb="tab-list"] {{gap: 0.3rem; border-bottom: 1px solid #E3E7EE;}}
-    .stTabs [data-baseweb="tab"] {{font-family: 'Jost', system-ui, sans-serif; font-weight: 400; font-size: 1rem; padding: 0.55rem 0.9rem;}}
-    .stTabs [aria-selected="true"] {{color: {NAVY};}}
-    .stTabs [data-baseweb="tab-highlight"] {{background-color: {BLUE};}}
+    /* Tabs as a gray rail with the open tab raised in white. Two sets of selectors: newer Streamlit
+       (role="tab", data-testid="stTab") and older versions, such as the in-browser build (baseweb). */
+    .stTabs [role="tablist"] {{gap: 0.05rem; background: #E7EAEF; border-radius: 12px; padding: 0.3rem; border-bottom: none;}}
+    .stTabs [role="tab"] {{border-radius: 9px; padding: 0.4rem 0.45rem; color: #4B5563; transition: background 0.15s ease;}}
+    .stTabs [role="tab"] p {{font-family: 'Jost', system-ui, sans-serif; font-size: 0.93rem; white-space: nowrap;}}
+    .stTabs [role="tab"]:hover {{background: #F5F6F8; color: {NAVY};}}
+    .stTabs [role="tab"][aria-selected="true"] {{color: {NAVY}; background: #FFFFFF; box-shadow: 0 1px 3px rgba(29, 40, 68, 0.16);}}
+    .stTabs [role="tab"][aria-selected="true"] p {{font-weight: 500;}}
+    .stTabs .react-aria-SelectionIndicator, .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {{display: none;}}
     div[data-testid="stMetric"] {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 12px; padding: 0.75rem 0.95rem;}}
-    .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {{border-radius: 10px; font-weight: 600;}}
-    section[data-testid="stSidebar"] {{background: #F7F9FC; border-right: 1px solid #E3E7EE;}}
-    .app-footer {{margin-top: 3rem; padding-top: 1.1rem; border-top: 1px solid #E3E7EE;
-                  font-size: 0.8rem; color: #6B7280; text-align: center;}}
+    .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button, .stLinkButton > a {{border-radius: 10px; font-weight: 600;}}
+    .stButton > button[kind="secondary"], .stDownloadButton > button[kind="secondary"], .stFormSubmitButton > button[kind="secondaryFormSubmit"],
+    .stLinkButton > a[kind="secondary"], [data-testid="stPopover"] button {{background: #FFFFFF; border: 1px solid {BLUE_LINE}; color: {NAVY};}}
+    .stButton > button[kind="secondary"]:hover, .stDownloadButton > button[kind="secondary"]:hover,
+    .stFormSubmitButton > button[kind="secondaryFormSubmit"]:hover, .stLinkButton > a[kind="secondary"]:hover {{border-color: {BLUE}; background: {BLUE_TINT}; color: {NAVY};}}
+    [data-testid="stExpander"] details {{background: #FFFFFF; border: 1px solid #E1E5EB; border-radius: 10px;}}
+    [data-testid="stDataFrame"], [data-testid="stDataEditor"] {{background: #FFFFFF; border-radius: 10px; box-shadow: 0 2px 8px rgba(29, 40, 68, 0.05);}}
+    section[data-testid="stSidebar"] {{background: linear-gradient(180deg, {BLUE_TINT} 0%, #F1F4F8 100%); border-right: 1px solid {BLUE_LINE};}}
+    section[data-testid="stSidebar"] h4 {{color: {NAVY}; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+                                          border-bottom: 1px solid {BLUE_LINE}; padding-bottom: 0.35rem; margin-top: 0.6rem;}}
+    .app-footer {{margin-top: 3rem; padding: 1rem; border-radius: 12px; background: {NAVY};
+                  font-size: 0.8rem; color: #D6DEE8; text-align: center;}}
+    .app-footer a {{color: #FFFFFF !important; text-decoration: none; border-bottom: 1px solid rgba(255,255,255,0.4);}}
     </style>
     """,
     unsafe_allow_html=True,
@@ -1319,6 +1356,7 @@ with template_tab:
                 st.error(msg)
 
 st.markdown(
-    f'<div class="app-footer">{APP_NAME} · {ORG_NAME} · Built for forensic accounting education</div>',
+    f'<div class="app-footer">{APP_NAME} · <a href="{ORG_URL}" target="_blank" rel="noopener noreferrer">{ORG_NAME}</a>'
+    " · Built for forensic accounting education</div>",
     unsafe_allow_html=True,
 )
