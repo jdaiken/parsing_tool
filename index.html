@@ -39,6 +39,7 @@
         "app.py",
         "auto_parser.py",
         "bank_directory.py",
+        "dashboard.py",
         "financial_statements.py",
         "ocr.py",
         "pdf_text.py",
@@ -60,7 +61,7 @@
       mount(
         {
           entrypoint: "web_app.py",
-          requirements: ["pandas", "openpyxl", "pdfminer.six==20260107"],
+          requirements: ["pandas", "openpyxl", "pdfminer.six==20260107", "plotly"],
           files: Object.fromEntries(sourceFiles.map((name) => [name, { url: `./${name}` }])),
           // Saved templates live in browser storage so they survive a reload.
           idbfsMountpoints: ["/home/pyodide/saved"],

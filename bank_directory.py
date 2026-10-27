@@ -79,6 +79,16 @@ BANKS: List[Dict] = [
 ]
 
 _KIND_LABELS = {"bank": "Bank", "credit_union": "Credit union", "card_issuer": "Credit cards"}
+
+# What the app converts, by kind of institution. This describes the app's reader, not each
+# institution's product line: it reads any bank-account or credit card statement layout.
+STATEMENT_TYPES = {
+    "bank": ["Checking", "Savings", "Money market", "Credit card"],
+    "credit_union": ["Checking (share draft)", "Savings (share)", "Money market", "Credit card"],
+    "card_issuer": ["Credit card"],
+}
+# Layouts checked with a mock statement built in that institution's style (not a real statement).
+LAYOUT_CHECKED = {"Wells Fargo", "Bank of America", "American Express", "Capital One"}
 _FIRST_TRANSACTION = re.compile(r"^\s*\d{1,2}[/-]\d{1,2}\b.*\d\.\d{2}")
 
 
@@ -104,6 +114,26 @@ def recognize_bank(full_text: str) -> Optional[Dict]:
     return best
 
 
+def bank_details(name: str) -> str:
+    """Tooltip text (HTML) for one institution: statements it converts and how well its layout is checked."""
+    bank = next(b for b in BANKS if b["name"] == name)
+    types = ", ".join(STATEMENT_TYPES[bank["kind"]])
+    checked = (
+        "Layout checked with a sample statement in this bank's style."
+        if name in LAYOUT_CHECKED
+        else "Read with the automatic reader; the reconciliation shows if anything was misread."
+    )
+    return f"<b>{name}</b> · {_KIND_LABELS[bank['kind']]}<br>Converts: {types} statements, typed or scanned.<br>{checked}"
+
+
 def directory_table() -> List[Dict]:
     """Rows for showing the directory in the app."""
-    return [{"Bank": bank["name"], "Type": _KIND_LABELS[bank["kind"]]} for bank in sorted(BANKS, key=lambda b: b["name"])]
+    return [
+        {
+            "Bank": bank["name"],
+            "Type": _KIND_LABELS[bank["kind"]],
+            "Statements it converts": ", ".join(STATEMENT_TYPES[bank["kind"]]),
+            "Layout checked": "Yes (sample statement)" if bank["name"] in LAYOUT_CHECKED else "",
+        }
+        for bank in sorted(BANKS, key=lambda b: b["name"])
+    ]

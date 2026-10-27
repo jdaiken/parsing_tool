@@ -25,9 +25,9 @@ DATE_DASH_RE = re.compile(r"\b\d{2}-\d{2}\b")
 CATEGORY_RULES = {
     "deposit": ("deposit", "credit", "refund", "reversal"),
     "fee_charge": ("service charge", "paper statement charge", "fee", "charge", "maintenance fee"),
+    "atm_withdrawal": ("atm withdrawal", "atm", "cash withdrawal", "withdrwl"),
     "card_purchase": ("visa", "debit card", "card purchase", "retail", "checkcard", "check card", "purchase", "pos"),
     "check": ("check",),
-    "atm_withdrawal": ("atm withdrawal", "atm", "cash withdrawal", "withdrwl"),
     "ach_transfer": ("ach", "transfer", "settlement"),
     "loan_payment": ("loan payment", "reserve", "interest charged"),
 }

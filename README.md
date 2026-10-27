@@ -9,6 +9,8 @@ Upload one or more statement PDFs and the app:
 - runs a bank reconciliation for each account
 - exports a formatted Excel workpaper and summary financial statements
 
+The **Dashboard** tab has interactive charts (cash flow over time, balances, transaction types, red flags, a risk timeline, top payees and day-of-week patterns). Filter by date, account, transaction type, direction, risk or a search word, then export exactly what you selected: Excel, CSV, or a self-contained interactive HTML dashboard. Each chart can also be saved as an image.
+
 **Statements stay private.** Both versions below process files on your own computer. Nothing is uploaded to a server.
 
 ## Option 1: Use it in your web browser (no install)
@@ -67,6 +69,7 @@ Most statements are read automatically. To make a bank's statements always recog
 | `pdf_text.py` | Gets the text out of each PDF page; hides text under black redaction boxes |
 | `ocr.py` | Reads scanned pages on your own computer |
 | `statement_parser.py` | Picks a reader for each statement; built-in bank layouts; risk scoring and flags |
+| `dashboard.py` | Dashboard charts and exports |
 | `bank_directory.py` | Built-in list of banks and card issuers recognized by name |
 | `template_manager.py` | Saves and recognizes the banks you add |
 | `workpaper_export.py`, `financial_statements.py` | Excel exports |

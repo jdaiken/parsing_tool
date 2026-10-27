@@ -20,8 +20,9 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+import dashboard
 from auto_parser import CREDIT_WORDS
-from bank_directory import BANKS, directory_table
+from bank_directory import BANKS, bank_details, directory_table
 
 BANK_NAMES = {bank["name"] for bank in BANKS}
 # Shown on the welcome screen; the rest are behind "See all".
@@ -78,32 +79,27 @@ st.markdown(
     .stApp a {{color: {BLUE};}}
     .stApp [data-testid="stIconMaterial"] {{font-family: 'Material Symbols Rounded' !important;}}
     #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], footer {{visibility: hidden; height: 0;}}
-    .block-container {{padding-top: 1.4rem; padding-bottom: 2rem; max-width: 1180px;}}
+    /* Streamlit's (hidden) top bar still takes space; start the page below it so the logo is never cut off. */
+    header[data-testid="stHeader"] {{background: transparent;}}
+    .block-container {{padding-top: 3.2rem; padding-bottom: 2rem; max-width: 1180px;}}
     h1, h2, h3, h4, h5 {{color: {NAVY}; letter-spacing: -0.01em;}}
 
     .brand {{border-radius: 14px; overflow: hidden; box-shadow: 0 8px 26px rgba(29, 40, 68, 0.14); border: 1px solid #E2E2E2;}}
     .brand-top {{display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-                 background: {LIGHT}; padding: 0.9rem 1.6rem;}}
-    .brand-logo {{height: 64px; width: auto; flex: none;}}
+                 background: {LIGHT}; padding: 1.1rem 1.6rem; min-height: 92px;}}
+    .brand-logo {{height: 64px; width: auto; flex: none; display: block; object-fit: contain;}}
     .brand-mark {{width: 52px; height: 52px; flex: none; border-radius: 50%; background: {NAVY};
                   display: flex; align-items: center; justify-content: center;}}
     .brand-nav {{font-family: 'Jost', system-ui, sans-serif; font-weight: 300; font-size: 1.05rem; color: #404040;
                  letter-spacing: 0.01em; text-align: right;}}
     .brand-band {{position: relative; overflow: hidden; background: linear-gradient(100deg, #8A877A 0%, {TAUPE} 55%, #9C998D 100%);
-                  color: #FFFFFF; padding: 1.7rem 1.8rem 1.4rem 1.8rem; display: flex; flex-wrap: wrap;
-                  align-items: flex-end; justify-content: space-between; gap: 1rem;}}
-    .brand-band::after {{content: ""; position: absolute; right: -40px; top: -50px; width: 260px; height: 260px;
+                  color: #FFFFFF; padding: 1.6rem 1.8rem 1.5rem 1.8rem;}}
+    .brand-band::after {{content: ""; position: absolute; right: -40px; top: -60px; width: 260px; height: 260px;
                          border-radius: 50%; border: 1px solid rgba(255,255,255,0.18);}}
     .brand-name {{font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600;
                   font-size: 2.6rem; line-height: 1.05; color: #FFFFFF;}}
     .brand-tagline {{font-family: 'Jost', system-ui, sans-serif; font-weight: 300; font-size: 1.08rem; color: #F4F2EC; margin-top: 0.45rem;}}
-    .brand-quote {{font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-size: 1.15rem;
-                   color: rgba(255,255,255,0.9); text-align: right; position: relative; z-index: 1;}}
-    .brand-pills {{display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; position: relative; z-index: 1;}}
-    .pill {{display: inline-flex; align-items: center; gap: 0.35rem; font-family: 'Jost', system-ui, sans-serif;
-            font-size: 0.82rem; font-weight: 400; padding: 0.28rem 0.8rem; border-radius: 999px;
-            background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.5); color: #FFFFFF;}}
-    .pill-key {{background: {NAVY}; border-color: {NAVY};}}
+    .brand-privacy {{font-family: 'Jost', system-ui, sans-serif; font-weight: 400; font-size: 0.9rem; color: #FFFFFF; margin-top: 0.7rem;}}
 
     .section-title {{font-family: 'Jost', system-ui, sans-serif; font-size: 1.15rem; font-weight: 500; color: {NAVY}; margin: 1.6rem 0 0.2rem 0;}}
     .section-sub {{font-size: 0.9rem; color: #5B6575; margin-bottom: 0.6rem;}}
@@ -120,8 +116,14 @@ st.markdown(
     .banks-panel h4 {{margin: 0 0 0.25rem 0; font-size: 0.98rem; color: {NAVY};}}
     .banks-panel p {{margin: 0 0 0.6rem 0; font-size: 0.86rem; color: #5B6575;}}
     .bank-chips {{display: flex; flex-wrap: wrap; gap: 0.4rem;}}
-    .bank-chip {{font-size: 0.8rem; font-weight: 500; color: {NAVY}; background: #FFFFFF; border: 1px solid #D5DCE8;
-                 border-radius: 999px; padding: 0.22rem 0.7rem;}}
+    .bank-chip {{position: relative; font-size: 0.8rem; font-weight: 500; color: {NAVY}; background: #FFFFFF; border: 1px solid #D5DCE8;
+                 border-radius: 999px; padding: 0.22rem 0.7rem; cursor: help; outline: none;}}
+    .bank-chip:hover, .bank-chip:focus {{border-color: {BLUE}; color: {BLUE};}}
+    .bank-tip {{display: none; position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; width: 260px;
+                background: {NAVY}; color: #FFFFFF; font-weight: 400; font-size: 0.78rem; line-height: 1.45;
+                border-radius: 8px; padding: 0.6rem 0.75rem; box-shadow: 0 8px 20px rgba(29,40,68,0.25);}}
+    .bank-tip b {{color: #FFFFFF;}}
+    .bank-chip:hover .bank-tip, .bank-chip:focus .bank-tip {{display: block;}}
     .bank-chip.more {{background: {NAVY}; color: #FFFFFF; border-color: {NAVY};}}
 
     .kpi-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 0.6rem 0 1rem 0;}}
@@ -185,9 +187,6 @@ if sys.platform == "emscripten":
 elif st.context.headers.get("Host", "").split(":")[0] in ("localhost", "127.0.0.1"):
     privacy_note = "Private: runs on your computer"
 
-pills = [f'<span class="pill pill-key">🔒 {privacy_note}</span>'] if privacy_note else []
-pills += [f'<span class="pill">{len(BANKS)} banks recognized</span>', '<span class="pill">Reads scans and redactions</span>',
-          '<span class="pill">Checks every balance</span>', '<span class="pill">Excel workpapers</span>']
 st.markdown(
     f"""
     <div class="brand">
@@ -196,12 +195,9 @@ st.markdown(
         <div class="brand-nav">Forensic accounting education</div>
       </div>
       <div class="brand-band">
-        <div>
-          <div class="brand-name">{APP_NAME}</div>
-          <div class="brand-tagline">{APP_TAGLINE}</div>
-          <div class="brand-pills">{''.join(pills)}</div>
-        </div>
-        <div class="brand-quote">"Justice is truth in action"<br>– Benjamin Disraeli</div>
+        <div class="brand-name">{APP_NAME}</div>
+        <div class="brand-tagline">{APP_TAGLINE}</div>
+        {f'<div class="brand-privacy">🔒 {privacy_note}</div>' if privacy_note else ''}
       </div>
     </div>
     """,
@@ -257,21 +253,18 @@ def _templates_key() -> str:
     return json.dumps(load_templates(), sort_keys=True)
 
 
-@st.cache_data(show_spinner=False, max_entries=50)
-def _parse_cached(name: str, data: bytes, threshold: float, templates_key: str, _report=None) -> ParseResult:
-    """Parse once per file and settings; scanned statements take a while to OCR."""
-    return parse_statement(name, data, threshold, progress=_report)
-
-
 def _parse_with_progress(name: str, data: bytes, threshold: float) -> ParseResult:
-    """Parse a statement, showing OCR progress (only the first time; results are cached)."""
+    """
+    Parse a statement, showing OCR progress. The slow part (reading scanned pages) is cached
+    per file inside pdf_text, so later reruns re-parse in a fraction of a second.
+    """
     progress = st.empty()
 
     def report(done: int, total: int) -> None:
         progress.progress(done / total, text=f"Reading scanned pages of {name}: page {done} of {total}")
 
     try:
-        return _parse_cached(name, data, threshold, _templates_key(), _report=report)
+        return parse_statement(name, data, threshold, progress=report)
     finally:
         progress.empty()
 
@@ -590,8 +583,8 @@ EMPTY_NOTE = "Upload a statement above, or click **Try it with sample statements
 # --- Main tabbed UI ---
 
 st.markdown('<div style="height:0.6rem"></div>', unsafe_allow_html=True)
-overview_tab, transactions_tab, risk_tab, reconciliation_tab, export_tab, template_tab = st.tabs(
-    ["Summary", "Transactions", "Red Flags", "Bank Reconciliation", "Download Workpapers", "Add a New Bank"]
+overview_tab, dashboard_tab, transactions_tab, risk_tab, reconciliation_tab, export_tab, template_tab = st.tabs(
+    ["Summary", "Dashboard", "Transactions", "Red Flags", "Bank Reconciliation", "Download Workpapers", "Add a New Bank"]
 )
 
 
@@ -620,16 +613,20 @@ with overview_tab:
             unsafe_allow_html=True,
         )
         # Make the built-in bank list visible before anyone uploads anything.
-        chips = "".join(f'<span class="bank-chip">{name}</span>' for name in FEATURED_BANKS)
+        chips = "".join(
+            f'<span class="bank-chip" tabindex="0">{name}<span class="bank-tip">{bank_details(name)}</span></span>'
+            for name in FEATURED_BANKS
+        )
         st.markdown(
             f'<div class="banks-panel"><h4>Banks it recognizes</h4>'
-            f"<p>{len(BANKS)} banks, credit unions and card issuers are recognized by name. Statements from any other "
-            f"bank are still read automatically.</p><div class=\"bank-chips\">{chips}"
+            f"<p>{len(BANKS)} banks, credit unions and card issuers are recognized by name. Hover over (or tap) a bank to see "
+            f"which statements the app converts for it. Statements from any other bank are still read automatically.</p>"
+            f"<div class=\"bank-chips\">{chips}"
             f'<span class="bank-chip more">+ {len(BANKS) - len(FEATURED_BANKS)} more</span></div></div>',
             unsafe_allow_html=True,
         )
         with st.expander(f"See all {len(BANKS)} recognized banks"):
-            st.dataframe(pd.DataFrame(directory_table()), use_container_width=True, hide_index=True, height=360)
+            st.dataframe(pd.DataFrame(directory_table()), width="stretch", hide_index=True, height=360)
     else:
         # Summary KPI cards: volume, risk, and cash flow totals.
         _kpis(
@@ -655,7 +652,7 @@ with overview_tab:
                 )
                 .properties(height=max(160, 34 * len(category_chart)))
                 .configure_view(stroke=None),
-                use_container_width=True,
+                width="stretch",
             )
         with c2:
             _section("Risk levels", "Every transaction is scored 0 to 100")
@@ -677,8 +674,89 @@ with overview_tab:
                 )
                 .properties(height=240)
                 .configure_view(stroke=None),
-                use_container_width=True,
+                width="stretch",
             )
+
+with dashboard_tab:
+    if not has_data:
+        st.info(EMPTY_NOTE)
+    else:
+        dash = dashboard.prepare(
+            all_transactions, {c: _display_category_name(c) for c in all_transactions["txn_category"].dropna().unique()}
+        )
+        dated = dash["date"].dropna()
+        # --- Filters: every chart, KPI and export below uses the same filtered rows ---
+        with st.container(border=True):
+            st.markdown('<div class="section-title" style="margin-top:0">Filters</div>', unsafe_allow_html=True)
+            f1, f2, f3 = st.columns([1.3, 1.6, 1.6])
+            first_day, last_day = (dated.min().date(), dated.max().date()) if not dated.empty else (None, None)
+            date_range = f1.date_input("Dates", value=(first_day, last_day), min_value=first_day, max_value=last_day, format="MM/DD/YYYY") if first_day else ()
+            accounts = sorted(dash["account"].unique())
+            chosen_accounts = f2.multiselect("Statements and accounts", accounts, placeholder="All")
+            categories = sorted(dash["category"].unique())
+            chosen_categories = f3.multiselect("Transaction types", categories, placeholder="All")
+            g1, g2, g3, g4 = st.columns([1.5, 1.0, 1.4, 1.2])
+            direction = g1.segmented_control("Direction", ["All", "Money in", "Money out"], default="All")
+            chosen_risk = g2.multiselect("Risk", ["High", "Medium", "Low"], placeholder="All")
+            granularity = g3.segmented_control("Group by", ["Daily", "Weekly", "Monthly"], default="Weekly") or "Weekly"
+            search = g4.text_input("Search descriptions", placeholder="casino, ATM, Zelle…")
+
+        view = dash
+        if len(date_range) == 2:
+            view = view[(view["date"].dt.date >= date_range[0]) & (view["date"].dt.date <= date_range[1]) | view["date"].isna()]
+        if chosen_accounts:
+            view = view[view["account"].isin(chosen_accounts)]
+        if chosen_categories:
+            view = view[view["category"].isin(chosen_categories)]
+        if direction == "Money in":
+            view = view[view["money_in"] > 0]
+        elif direction == "Money out":
+            view = view[view["money_out"] > 0]
+        if chosen_risk:
+            view = view[view["risk"].isin(chosen_risk)]
+        if search:
+            view = view[view["description"].str.contains(search, case=False, na=False, regex=False)]
+
+        if view.empty:
+            st.warning("No transactions match these filters.")
+        else:
+            _kpis(
+                [
+                    ("Transactions", f"{len(view):,}", f"of {len(dash):,} in total", ""),
+                    ("Money in", _money(view["money_in"].sum()), f"{int((view['money_in'] > 0).sum())} items", "green"),
+                    ("Money out", _money(view["money_out"].sum()), f"{int((view['money_out'] > 0).sum())} items", "gold"),
+                    ("Net change", _money(view["net"].sum()), "Money in minus money out", "blue"),
+                    ("Higher-risk items", f"{int(view['flagged'].sum())}", _money(view.loc[view["flagged"], "amount"].sum()) + " total", "red"),
+                ]
+            )
+            charts = [
+                ("Cash flow over time", f"{granularity} money in and out, with the net change", dashboard.cash_flow(view, granularity)),
+                ("Balance over time", "Printed running balance, or the cumulative net change where the statement has none", dashboard.balance_over_time(view)),
+                ("Transaction types", "Dollar total per type; labels show the number of transactions", dashboard.category_totals(view)),
+                ("Money out by type over time", f"{granularity} totals, stacked by type", dashboard.category_over_time(view, granularity)),
+                ("Red flags: why transactions were flagged", "How often each rule fired on medium- and high-risk transactions", dashboard.flag_reasons(view)),
+                ("Risk timeline", "Every transaction by date and amount; bigger dots score higher. Hover for the reasons.", dashboard.risk_timeline(view)),
+                ("Top payees and merchants", "Where the most money went", dashboard.top_payees(view)),
+                ("Day of the week", "Transactions per weekday (weekends in taupe)", dashboard.weekday_pattern(view)),
+            ]
+            layout = [(0, 1), (2, 3), (4, 5), (6, 7)]
+            for left, right in layout:
+                c1, c2 = st.columns(2)
+                for column, (title, subtitle, fig) in ((c1, charts[left]), (c2, charts[right])):
+                    with column:
+                        _section(title, subtitle)
+                        if title.startswith("Red flags") and not view["flagged"].any():
+                            st.caption("No medium- or high-risk transactions in this selection.")
+                        else:
+                            st.plotly_chart(fig, width="stretch", config=dashboard.PLOTLY_CONFIG)
+
+            _section("Export", "Exactly what the filters above select. Each chart also has a camera icon (top right) to save it as an image.")
+            e1, e2, e3 = st.columns(3)
+            stamp = f"{datetime.now():%Y%m%d_%H%M}"
+            e1.download_button("Filtered transactions (.xlsx)", dashboard.to_excel(view), file_name=f"transactions_{stamp}.xlsx", icon=":material/table_view:", width="stretch")
+            e2.download_button("Filtered transactions (.csv)", dashboard.export_frame(view).to_csv(index=False).encode(), file_name=f"transactions_{stamp}.csv", mime="text/csv", icon=":material/description:", width="stretch")
+            report = dashboard.to_html_report(f"{APP_NAME}: dashboard", f"{ORG_NAME} · {len(view)} transactions · exported {datetime.now():%b %d, %Y}", [(t, f) for t, _, f in charts])
+            e3.download_button("Interactive dashboard (.html)", report.encode(), file_name=f"dashboard_{stamp}.html", mime="text/html", icon=":material/monitoring:", width="stretch")
 
 with transactions_tab:
     if not has_data:
@@ -715,7 +793,7 @@ with transactions_tab:
                 "running_balance": _money_text_column("Balance"),
                 "risk_badge": "Risk",
             },
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=480,
         )
@@ -744,7 +822,7 @@ with risk_tab:
                 "risk_badge": "Risk",
                 "risk_reasons": st.column_config.TextColumn("Why it was flagged", width="large"),
             },
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         if not all_flags.empty:
@@ -761,7 +839,7 @@ with risk_tab:
                     "txn_date": "Date",
                     "amount": st.column_config.NumberColumn("Amount", **MONEY_COLUMN),
                 },
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -826,14 +904,14 @@ with export_tab:
                 "and reasons, plus a summary and a review list of flagged items.</p></div>",
                 unsafe_allow_html=True,
             )
-            st.download_button("Download workpaper (.xlsx)", data=BytesIO(workpaper_bytes).getvalue(), file_name=f"forensic_workpaper_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", icon=":material/download:", use_container_width=True)
+            st.download_button("Download workpaper (.xlsx)", data=BytesIO(workpaper_bytes).getvalue(), file_name=f"forensic_workpaper_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", icon=":material/download:", width="stretch")
         with d2:
             st.markdown(
                 '<div class="download-card"><h4>Financial statements</h4><p>A management summary, statement of activities '
                 "by month, and cash position from the bank reconciliation.</p></div>",
                 unsafe_allow_html=True,
             )
-            st.download_button("Download financial statements (.xlsx)", data=BytesIO(financial_bytes).getvalue(), file_name=f"financial_statements_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:", use_container_width=True)
+            st.download_button("Download financial statements (.xlsx)", data=BytesIO(financial_bytes).getvalue(), file_name=f"financial_statements_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:", width="stretch")
 
 with template_tab:
     # One-click onboarding: upload a statement from a new bank, check what was read, save it.
@@ -846,7 +924,7 @@ with template_tab:
         unsafe_allow_html=True,
     )
     with st.expander(f"Banks recognized automatically ({len(BANKS)})"):
-        st.dataframe(pd.DataFrame(directory_table()), use_container_width=True, hide_index=True, height=360)
+        st.dataframe(pd.DataFrame(directory_table()), width="stretch", hide_index=True, height=360)
     sample_upload = st.file_uploader("Upload one statement from the bank", type=["pdf"], key="template_sample_upload")
     if sample_upload is not None:
         with st.spinner("Reading the statement…"):
@@ -886,7 +964,7 @@ with template_tab:
                     "credit": _money_text_column("Money in"),
                     "running_balance": _money_text_column("Balance"),
                 },
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -926,7 +1004,7 @@ with template_tab:
                     for t in templates
                 ]
             ),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         delete_name = st.selectbox("Remove a saved bank", [t["template_name"] for t in templates], key="delete_template")
