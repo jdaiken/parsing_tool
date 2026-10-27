@@ -10,7 +10,7 @@ toolbarMode = "minimal"
 
 [theme]
 base = "light"
-primaryColor = "#14284B"
+primaryColor = "#1D2844"
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F4F6FA"
 textColor = "#1F2937"

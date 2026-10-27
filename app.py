@@ -41,9 +41,11 @@ from workpaper_export import build_workpaper
 APP_NAME = "Bank Statement Analyzer"
 APP_TAGLINE = "Turn bank statement PDFs into forensic accounting workpapers in minutes."
 ORG_NAME = "Justice for Fraud Victims Project"
-NAVY = "#14284B"
-NAVY_LIGHT = "#1F3B6B"
-GOLD = "#C9A227"
+# Justice for Fraud Victims Project palette (from justiceforfraudvictimsproject.org).
+NAVY = "#1D2844"  # scales badge
+BLUE = "#246094"  # "JFVP" lettering
+TAUPE = "#918E81"  # quote panel
+LIGHT = "#F3F3F3"  # header bar
 RISK_COLORS = {"High": "#B42318", "Medium": "#D97706", "Low": "#15803D"}
 
 APP_DIR = Path(__file__).resolve().parent
@@ -60,7 +62,7 @@ def _logo_html() -> str:
             encoded = base64.b64encode(path.read_bytes()).decode("ascii")
             return f'<img class="brand-logo" src="data:{mime};base64,{encoded}" alt="{ORG_NAME} logo">'
     return (
-        f'<div class="brand-mark"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="{NAVY}" '
+        f'<div class="brand-mark"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" '
         'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
         '<path d="M12 3v18M5 21h14M4 7h16M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/></svg></div>'
     )
@@ -69,35 +71,41 @@ def _logo_html() -> str:
 st.markdown(
     f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Jost:wght@300;400;500&family=Cormorant+Garamond:ital,wght@1,500;1,600&display=swap');
     .stApp, .stApp p, .stApp label, .stApp button, .stApp input, .stApp textarea, .stApp li, .stApp h1, .stApp h2,
     .stApp h3, .stApp h4, .stApp h5, .stApp [data-baseweb="tab"] {{
         font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;}}
+    .stApp a {{color: {BLUE};}}
     .stApp [data-testid="stIconMaterial"] {{font-family: 'Material Symbols Rounded' !important;}}
     #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], footer {{visibility: hidden; height: 0;}}
     .block-container {{padding-top: 1.4rem; padding-bottom: 2rem; max-width: 1180px;}}
     h1, h2, h3, h4, h5 {{color: {NAVY}; letter-spacing: -0.01em;}}
 
-    .brand {{position: relative; overflow: hidden; border-radius: 16px; padding: 1.7rem 1.9rem;
-             background: linear-gradient(135deg, {NAVY} 0%, {NAVY_LIGHT} 100%); color: #FFFFFF;
-             box-shadow: 0 10px 30px rgba(20, 40, 75, 0.18);}}
-    .brand::after {{content: ""; position: absolute; right: -60px; top: -60px; width: 240px; height: 240px;
-                    border-radius: 50%; background: rgba(201, 162, 39, 0.10);}}
-    .brand::before {{content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: {GOLD};}}
-    .brand-row {{display: flex; align-items: center; gap: 1.1rem; position: relative; z-index: 1;}}
-    .brand-mark {{width: 56px; height: 56px; flex: none; border-radius: 14px; background: {GOLD};
+    .brand {{border-radius: 14px; overflow: hidden; box-shadow: 0 8px 26px rgba(29, 40, 68, 0.14); border: 1px solid #E2E2E2;}}
+    .brand-top {{display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+                 background: {LIGHT}; padding: 0.9rem 1.6rem;}}
+    .brand-logo {{height: 64px; width: auto; flex: none;}}
+    .brand-mark {{width: 52px; height: 52px; flex: none; border-radius: 50%; background: {NAVY};
                   display: flex; align-items: center; justify-content: center;}}
-    .brand-logo {{height: 60px; width: auto; flex: none; background: #FFFFFF; border-radius: 12px; padding: 6px;}}
-    .brand-org {{font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #E8D9A8;}}
-    .brand-name {{font-size: 2rem; font-weight: 700; color: #FFFFFF; line-height: 1.15; margin-top: 0.15rem;}}
-    .brand-tagline {{font-size: 1rem; color: #D6DEEB; margin-top: 0.3rem;}}
-    .brand-pills {{display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.1rem; position: relative; z-index: 1;}}
-    .pill {{display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 500;
-            padding: 0.3rem 0.75rem; border-radius: 999px; background: rgba(255,255,255,0.10);
-            border: 1px solid rgba(255,255,255,0.22); color: #FFFFFF;}}
-    .pill-gold {{background: rgba(201,162,39,0.18); border-color: rgba(201,162,39,0.55); color: #F3E3AE;}}
+    .brand-nav {{font-family: 'Jost', system-ui, sans-serif; font-weight: 300; font-size: 1.05rem; color: #404040;
+                 letter-spacing: 0.01em; text-align: right;}}
+    .brand-band {{position: relative; overflow: hidden; background: linear-gradient(100deg, #8A877A 0%, {TAUPE} 55%, #9C998D 100%);
+                  color: #FFFFFF; padding: 1.7rem 1.8rem 1.4rem 1.8rem; display: flex; flex-wrap: wrap;
+                  align-items: flex-end; justify-content: space-between; gap: 1rem;}}
+    .brand-band::after {{content: ""; position: absolute; right: -40px; top: -50px; width: 260px; height: 260px;
+                         border-radius: 50%; border: 1px solid rgba(255,255,255,0.18);}}
+    .brand-name {{font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600;
+                  font-size: 2.6rem; line-height: 1.05; color: #FFFFFF;}}
+    .brand-tagline {{font-family: 'Jost', system-ui, sans-serif; font-weight: 300; font-size: 1.08rem; color: #F4F2EC; margin-top: 0.45rem;}}
+    .brand-quote {{font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-size: 1.15rem;
+                   color: rgba(255,255,255,0.9); text-align: right; position: relative; z-index: 1;}}
+    .brand-pills {{display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; position: relative; z-index: 1;}}
+    .pill {{display: inline-flex; align-items: center; gap: 0.35rem; font-family: 'Jost', system-ui, sans-serif;
+            font-size: 0.82rem; font-weight: 400; padding: 0.28rem 0.8rem; border-radius: 999px;
+            background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.5); color: #FFFFFF;}}
+    .pill-key {{background: {NAVY}; border-color: {NAVY};}}
 
-    .section-title {{font-size: 1.05rem; font-weight: 600; color: {NAVY}; margin: 1.6rem 0 0.2rem 0;}}
+    .section-title {{font-family: 'Jost', system-ui, sans-serif; font-size: 1.15rem; font-weight: 500; color: {NAVY}; margin: 1.6rem 0 0.2rem 0;}}
     .section-sub {{font-size: 0.9rem; color: #5B6575; margin-bottom: 0.6rem;}}
     [data-testid="stFileUploaderDropzone"] {{border: 2px dashed #C9D3E3; background: #F7F9FC; border-radius: 12px;}}
 
@@ -119,7 +127,8 @@ st.markdown(
     .kpi-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 0.6rem 0 1rem 0;}}
     .kpi {{background: #FFFFFF; border: 1px solid #E3E7EE; border-top: 3px solid {NAVY}; border-radius: 12px;
            padding: 0.85rem 1rem; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);}}
-    .kpi.gold {{border-top-color: {GOLD};}}
+    .kpi.gold {{border-top-color: {TAUPE};}}
+    .kpi.blue {{border-top-color: {BLUE};}}
     .kpi.red {{border-top-color: {RISK_COLORS['High']};}}
     .kpi.green {{border-top-color: {RISK_COLORS['Low']};}}
     .kpi-label {{font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6B7280;}}
@@ -153,12 +162,12 @@ st.markdown(
     .steps li::before {{content: counter(step); flex: none; width: 1.45rem; height: 1.45rem; border-radius: 50%;
                         background: {NAVY}; color: #FFFFFF; font-size: 0.75rem; font-weight: 600;
                         display: inline-flex; align-items: center; justify-content: center;}}
-    .section-card {{border: 1px solid #E3E7EE; border-left: 4px solid {GOLD}; border-radius: 10px;
+    .section-card {{border: 1px solid #E3E7EE; border-left: 4px solid {BLUE}; border-radius: 10px;
                     padding: 0.85rem 1rem; background: #FFFFFF; color: #1F2937; margin-bottom: 0.8rem;}}
     .stTabs [data-baseweb="tab-list"] {{gap: 0.3rem; border-bottom: 1px solid #E3E7EE;}}
-    .stTabs [data-baseweb="tab"] {{font-weight: 600; padding: 0.55rem 0.9rem;}}
+    .stTabs [data-baseweb="tab"] {{font-family: 'Jost', system-ui, sans-serif; font-weight: 400; font-size: 1rem; padding: 0.55rem 0.9rem;}}
     .stTabs [aria-selected="true"] {{color: {NAVY};}}
-    .stTabs [data-baseweb="tab-highlight"] {{background-color: {GOLD};}}
+    .stTabs [data-baseweb="tab-highlight"] {{background-color: {BLUE};}}
     div[data-testid="stMetric"] {{background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 12px; padding: 0.75rem 0.95rem;}}
     .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {{border-radius: 10px; font-weight: 600;}}
     section[data-testid="stSidebar"] {{background: #F7F9FC; border-right: 1px solid #E3E7EE;}}
@@ -176,20 +185,24 @@ if sys.platform == "emscripten":
 elif st.context.headers.get("Host", "").split(":")[0] in ("localhost", "127.0.0.1"):
     privacy_note = "Private: runs on your computer"
 
-pills = [f'<span class="pill pill-gold">🔒 {privacy_note}</span>'] if privacy_note else []
-pills += [f'<span class="pill">{len(BANKS)} banks recognized</span>', '<span class="pill">Reads any bank</span>', '<span class="pill">Checks every balance</span>', '<span class="pill">Excel workpapers</span>']
+pills = [f'<span class="pill pill-key">🔒 {privacy_note}</span>'] if privacy_note else []
+pills += [f'<span class="pill">{len(BANKS)} banks recognized</span>', '<span class="pill">Reads scans and redactions</span>',
+          '<span class="pill">Checks every balance</span>', '<span class="pill">Excel workpapers</span>']
 st.markdown(
     f"""
     <div class="brand">
-      <div class="brand-row">
+      <div class="brand-top">
         {_logo_html()}
+        <div class="brand-nav">Forensic accounting education</div>
+      </div>
+      <div class="brand-band">
         <div>
-          <div class="brand-org">{ORG_NAME}</div>
           <div class="brand-name">{APP_NAME}</div>
           <div class="brand-tagline">{APP_TAGLINE}</div>
+          <div class="brand-pills">{''.join(pills)}</div>
         </div>
+        <div class="brand-quote">"Justice is truth in action"<br>– Benjamin Disraeli</div>
       </div>
-      <div class="brand-pills">{''.join(pills)}</div>
     </div>
     """,
     unsafe_allow_html=True,
