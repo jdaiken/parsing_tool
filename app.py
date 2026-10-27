@@ -75,7 +75,7 @@ APPROVED_SERVER = os.environ.get("BSA_APPROVED_SERVER") == "1"
 USER_HEADER = os.environ.get("BSA_USER_HEADER", "").strip()
 # Files that make up the app, for "Download the app"; never projects/ or saved banks.
 APP_FILE_PATTERNS = [
-    "*.py", "*.pdf", "*.md", "requirements.txt", "requirements-lock.txt", "index.html", ".gitignore", ".nojekyll",
+    "*.py", "*.pdf", "*.md", "LICENSE", "NOTICE", "requirements.txt", "requirements-lock.txt", "index.html", ".gitignore", ".nojekyll",
     ".dockerignore", "start.bat", "start.sh", ".streamlit/config.toml", ".vscode/*.json", ".github/*.yml",
     ".github/workflows/*.yml", "assets/*", "assets/fonts/*", "demo/*", "docs/*.md", "deploy/*/*", "tools/*.py", "tests/*.py",
 ]

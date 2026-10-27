@@ -1,0 +1,11 @@
+Bank Statement Analyzer
+Copyright 2026 Justice for Fraud Victims Project
+
+Licensed under the Apache License, Version 2.0 (see LICENSE). It is free to use, copy, modify
+and share, including for real casework, teaching, and hosting by universities and organizations.
+
+This software includes or downloads third-party components under their own licenses:
+- Streamlit, stlite and Pyodide (Apache License 2.0 / Mozilla Public License 2.0), and the Python
+  packages listed in requirements-lock.txt, each under its own license.
+- The Inter, Jost and Cormorant Garamond fonts in assets/fonts, under the SIL Open Font License 1.1
+  (license files alongside the fonts).

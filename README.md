@@ -162,6 +162,10 @@ The `demo/` folder holds a fictional elder-financial-exploitation case: three mo
 
 `python -m pytest` runs the tests: the demo statements reconcile, every planted fraud pattern and document edit is found, projects are unreadable without their password, and the two hosting options stay locked down. GitHub runs them on every push, and builds both Docker images. Dependabot proposes updates to packages, base images and GitHub Actions weekly.
 
+## License
+
+Free, always: Bank Statement Analyzer is released under the [Apache License 2.0](LICENSE). Anyone, including universities, students and investigators, may use, copy, modify, host and share it at no cost, for real casework or teaching. Copyright 2026 Justice for Fraud Victims Project; see [NOTICE](NOTICE) for third-party components.
+
 ## Branding
 
 - **Logo:** save the organization's logo as `assets/logo.png` (or `logo.svg` / `logo.jpg`). Both versions pick it up automatically.

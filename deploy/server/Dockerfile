@@ -29,7 +29,7 @@ RUN --mount=type=secret,id=ca_bundle \
     if [ -f /run/secrets/ca_bundle ]; then export PIP_CERT=/run/secrets/ca_bundle; fi; \
     pip install --require-hashes -r requirements-lock.txt
 
-COPY *.py ./
+COPY *.py LICENSE NOTICE ./
 COPY assets ./assets
 COPY demo ./demo
 COPY .streamlit ./.streamlit

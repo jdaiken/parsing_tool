@@ -95,7 +95,7 @@ APP_FILES = [
     "demo/1_checking_2025-03.pdf", "demo/2_checking_2025-04.pdf", "demo/3_checking_2025-05.pdf",
     "demo/4_credit_card_2025-05.pdf", "demo/5_checking_2025-04_family_copy.pdf",
     "demo/6_checking_2025-05_scanned_redacted.pdf", "demo/ANSWER_KEY.md", "demo/make_demo_case.py",
-    "requirements.txt", "requirements-lock.txt", "README.md", "SECURITY.md", "docs/SECURITY_AND_DATA_HANDLING.md", "docs/UNIVERSITY_DEPLOYMENT.md",
+    "LICENSE", "NOTICE", "requirements.txt", "requirements-lock.txt", "README.md", "SECURITY.md", "docs/SECURITY_AND_DATA_HANDLING.md", "docs/UNIVERSITY_DEPLOYMENT.md",
     "start.bat", "start.sh", ".streamlit/config.toml",
 ]
 
