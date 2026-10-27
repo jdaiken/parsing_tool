@@ -21,12 +21,13 @@ AMOUNT_RE = re.compile(r"\$?\d[\d,]*\.\d{2}")
 DATE_SLASH_RE = re.compile(r"^\d{2}/\d{2}/\d{4}")
 DATE_DASH_RE = re.compile(r"\b\d{2}-\d{2}\b")
 
+# Checked in order, as whole words ("fee" doesn't match "coffee"); the first match wins.
 CATEGORY_RULES = {
     "deposit": ("deposit", "credit", "refund", "reversal"),
+    "fee_charge": ("service charge", "paper statement charge", "fee", "charge", "maintenance fee"),
+    "card_purchase": ("visa", "debit card", "card purchase", "retail", "checkcard", "check card", "purchase", "pos"),
     "check": ("check",),
-    "atm_withdrawal": ("atm withdrawal", "atm", "cash withdrawal"),
-    "card_purchase": ("visa", "debit card", "card purchase", "retail"),
-    "fee_charge": ("service charge", "paper statement charge", "fee", "charge"),
+    "atm_withdrawal": ("atm withdrawal", "atm", "cash withdrawal", "withdrwl"),
     "ach_transfer": ("ach", "transfer", "settlement"),
     "loan_payment": ("loan payment", "reserve", "interest charged"),
 }
@@ -120,11 +121,11 @@ def _categorize_transaction(
             return "atm_withdrawal"
         return "card_purchase"
     has_check_number = check_number is not None and not pd.isna(check_number) and str(check_number).strip() != ""
-    if transaction_type == "check" or ("check" in text and has_check_number) or re.match(r"(share\s+)?draft\b", text):
+    if transaction_type == "check" or (re.search(r"\bcheck\b", text) and has_check_number) or re.match(r"(share\s+)?draft\b", text):
         return "check"
 
     for category, terms in CATEGORY_RULES.items():
-        if any(term in text for term in terms):
+        if any(re.search(rf"\b{re.escape(term)}\b", text) for term in terms):
             if category == "deposit" and direction != "credit":
                 continue
             return category

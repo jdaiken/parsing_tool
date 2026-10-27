@@ -36,6 +36,17 @@ It opens at http://localhost:8501. `.streamlit/config.toml` keeps it private: on
 - **Credit card statements** are recognized automatically. Charges, fees and interest are money out; payments and refunds are money in. The reconciliation checks previous balance + charges − payments = new balance.
 - **Several monthly statements in one PDF** are split into separate statements by statement period.
 
+## Banks it knows
+
+Statements from any bank are read without setup. The app also recognizes 57 major US banks, credit unions and card issuers by name (Chase, Bank of America, Wells Fargo, Citi, Capital One, American Express, Navy Federal and others; the full list is in the **Add a New Bank** tab and `bank_directory.py`). It handles the common layouts these banks use:
+
+- money in and money out in separate columns with no minus signs (read from the column each amount sits under);
+- a balance printed only on the last line of each day (each day's lines are checked against it);
+- section headings such as "Deposits and other additions" and "Withdrawals and other subtractions", with section totals;
+- credit card statements with payments printed as negatives.
+
+These layouts were tested with made-up statements modelled on each format, not with real statements from those banks. The reconciliation tab shows a variance if a statement wasn't read correctly.
+
 ## Adding a new bank
 
 Most statements are read automatically. To make a bank's statements always recognized, open the **Add a New Bank** tab, upload one statement, check the preview, and click **Save this bank**. Nothing else to fill in.
@@ -56,6 +67,7 @@ Most statements are read automatically. To make a bank's statements always recog
 | `pdf_text.py` | Gets the text out of each PDF page; hides text under black redaction boxes |
 | `ocr.py` | Reads scanned pages on your own computer |
 | `statement_parser.py` | Picks a reader for each statement; built-in bank layouts; risk scoring and flags |
+| `bank_directory.py` | Built-in list of banks and card issuers recognized by name |
 | `template_manager.py` | Saves and recognizes the banks you add |
 | `workpaper_export.py`, `financial_statements.py` | Excel exports |
 | `index.html`, `web_app.py` | The in-browser version |

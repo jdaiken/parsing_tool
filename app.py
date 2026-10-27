@@ -21,6 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from auto_parser import CREDIT_WORDS
+from bank_directory import BANKS, directory_table
 from financial_statements import build_financial_statements
 from statement_parser import BUILT_IN_FORMAT_NAMES, ParseResult, analyze_statement, parse_statement
 from template_manager import delete_template, extract_preview_text, load_templates, save_template
@@ -361,15 +362,16 @@ def _build_reconciliation_table(transactions: pd.DataFrame) -> pd.DataFrame:
         opening = _first_number(ordered, "statement_opening_balance")
         closing = _first_number(ordered, "statement_closing_balance")
         if not running.empty:
-            # Derive opening balance by reversing the first transaction from its running balance.
-            first_idx = running.index[0]
-            first_row = ordered.loc[first_idx]
-            first_credit_raw = pd.to_numeric(first_row.get("credit"), errors="coerce")
-            first_debit_raw = pd.to_numeric(first_row.get("debit"), errors="coerce")
-            first_credit = 0.0 if pd.isna(first_credit_raw) else float(first_credit_raw)
-            first_debit = 0.0 if pd.isna(first_debit_raw) else float(first_debit_raw)
-            beginning = float(running.iloc[0]) - first_credit + first_debit
-            row.update(method="running_balance", beginning_balance=beginning, ending_balance=float(running.iloc[-1]))
+            # Opening balance: the first printed balance, less every transaction up to and including it
+            # (some banks print a balance only on the last line of each day).
+            net = (
+                pd.to_numeric(ordered["credit"], errors="coerce").fillna(0)
+                - pd.to_numeric(ordered["debit"], errors="coerce").fillna(0)
+            ).cumsum()
+            beginning = float(running.iloc[0]) - float(net.loc[running.index[0]])
+            # Lines after the last printed balance can't be checked against it; carry them forward.
+            ending = float(running.iloc[-1]) + float(net.iloc[-1] - net.loc[running.index[-1]])
+            row.update(method="running_balance", beginning_balance=beginning, ending_balance=ending)
             row["expected_ending_balance"] = beginning + credits - debits
             row["reconciliation_difference"] = row["ending_balance"] - row["expected_ending_balance"]
             if abs(row["reconciliation_difference"]) <= 0.01:
@@ -795,11 +797,14 @@ with template_tab:
     # One-click onboarding: upload a statement from a new bank, check what was read, save it.
     _section("Add a new bank", "")
     st.markdown(
-        '<div class="section-card">Most statements are read automatically, even from banks the app has never seen. '
-        "To save a bank so it's always recognized, upload one of its statements, check the preview, and click "
-        "<b>Save this bank</b>. No setup or typing needed.</div>",
+        f'<div class="section-card">Statements from <b>any bank</b> are read automatically, and {len(BANKS)} major banks, '
+        "credit unions and card issuers are recognized by name with nothing to set up (list below). "
+        "To have another bank recognized by name, upload one of its statements, check the preview, and click "
+        "<b>Save this bank</b>.</div>",
         unsafe_allow_html=True,
     )
+    with st.expander(f"Banks recognized automatically ({len(BANKS)})"):
+        st.dataframe(pd.DataFrame(directory_table()), use_container_width=True, hide_index=True, height=360)
     sample_upload = st.file_uploader("Upload one statement from the bank", type=["pdf"], key="template_sample_upload")
     if sample_upload is not None:
         with st.spinner("Reading the statement…"):

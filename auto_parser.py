@@ -23,10 +23,13 @@ from the change in balance.
 from __future__ import annotations
 
 from collections import Counter
+from itertools import combinations
 from dataclasses import dataclass, field
 from datetime import datetime
 import re
 from typing import Dict, List, Optional, Tuple
+
+from bank_directory import recognize_bank
 
 MONTH_NAMES = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -48,7 +51,10 @@ AMOUNT = (
 
 DATE_RE = re.compile(DATE, re.IGNORECASE)
 AMOUNT_RE = re.compile(AMOUNT)
-LEADING_DATE_RE = re.compile(rf"^(?P<d1>{DATE})(?:\s+(?P<d2>{DATE}))?(?=\s|$)", re.IGNORECASE)
+# A trailing * on a date (Amex marks some lines that way) is part of the date column.
+LEADING_DATE_RE = re.compile(rf"^(?P<d1>{DATE})\*?(?:\s+(?P<d2>{DATE})\*?)?(?=\s|$)", re.IGNORECASE)
+# "June 1, 2025 - June 30, 2025", "Feb 05, 2025 - Mar 06, 2025 | 30 days": a statement period, not a transaction.
+DATE_RANGE_RE = re.compile(rf"^(?:[A-Za-z ]{{0,30}}:?\s*)?{DATE}\s*(?:-|–|to|through|thru)\s*{DATE}", re.IGNORECASE)
 # Description first, then the date(s), then only amounts to the end of the line.
 TRAILING_DATE_RE = re.compile(
     rf"^(?P<desc>.*?\S)\s+(?P<d1>{DATE})(?:\s+(?P<d2>{DATE}))?\s+(?P<amts>[-($\d][\d,.\s$()\-CRDcrd]*)$",
@@ -60,7 +66,7 @@ DATE_AMOUNT_PAIR_RE = re.compile(rf"{DATE}\s+\$?\d[\d,]*\.\d{{2}}", re.IGNORECAS
 MASK_CHARS = "Xx*•█"
 ACCOUNT_RE = re.compile(
     rf"(?:account|card)\s*(?:number|no\.?|#)\s*:?\s*([0-9{MASK_CHARS}][0-9{MASK_CHARS}\- ]{{2,}}[0-9{MASK_CHARS}])"
-    r"|(?:account|card)\s+ending\s+(?:in\s+)?(\d{4})\b",
+    r"|(?:(?:account|card)\s+ending\s+(?:in\s+)?|\bending\s+in\s+)(\d[\d-]{3,})\b",
     re.IGNORECASE,
 )
 # "[REDACTED]", "REDACTED", runs of block characters, or 4+ X / * / • used to blank out text.
@@ -162,11 +168,17 @@ class AutoParseOutput:
         return "low"
 
 
+# Sign hints: 1 = CR (money in), -1 = printed negative, DEBIT_MARK = DR (money out).
+DEBIT_MARK = -2
+
+
 def _parse_amount(match: re.Match) -> Tuple[float, int]:
     value = float(f"{match.group('num').replace(',', '')}.{match.group('cents')}")
     sign = 0
     suffix = (match.group("suffix") or "").strip().upper()
-    if match.group("neg") or match.group("close") or suffix in ("-", "DR"):
+    if suffix == "DR":
+        sign = DEBIT_MARK  # explicitly money out, even on a card statement
+    elif match.group("neg") or match.group("close") or suffix == "-":
         sign = -1
     elif suffix == "CR":
         sign = 1
@@ -186,18 +198,24 @@ def detect_statement_kind(full_text: str) -> str:
     head = "\n".join(full_text.splitlines()[:80]).lower()
     if re.search(r"\bchecking\b", head) and "credit card" not in head:
         return "bank"
+    bank = recognize_bank(full_text)
+    if bank and bank["kind"] == "card_issuer":
+        return "credit_card"
     return "credit_card" if sum(marker in head for marker in CARD_MARKERS) >= 2 else "bank"
 
 
 def normalize_account(match: re.Match) -> Optional[str]:
     """Account number from an ACCOUNT_RE match; masked numbers become ****1234."""
     if match.group(2):
-        return f"****{match.group(2)}"
+        return f"****{re.sub(r'\D', '', match.group(2))[-4:]}"
     raw = match.group(1).strip()
     if any(ch in raw for ch in MASK_CHARS):
         digits = re.sub(r"\D", "", raw)
         return f"****{digits[-4:]}" if digits else None  # fully redacted: no usable number
-    return raw.split()[0]
+    tokens = raw.split()
+    if len(tokens) > 1 and all(re.fullmatch(r"\d{3,5}", token) for token in tokens):
+        return "".join(tokens)  # printed in groups: "0000 1111 2222"
+    return tokens[0]
 
 
 def summary_balances(full_text: str) -> Tuple[Optional[float], Optional[float]]:
@@ -278,7 +296,10 @@ def _to_date(raw: str, base_year: int, wraps_year: bool) -> Optional[datetime]:
 
 
 def suggest_bank_name(full_text: str) -> Optional[str]:
-    """Best guess at the bank's name from the first page header."""
+    """The bank's name: from the built-in directory if it's a known institution, else a guess from the header."""
+    known = recognize_bank(full_text)
+    if known:
+        return known["name"]
     head_lines = [ln.strip() for ln in full_text.splitlines()[:40] if ln.strip()]
     for line in head_lines:
         match = BANK_NAME_RE.search(line)
@@ -420,6 +441,11 @@ def _collect_candidates(pages: List[str], is_card: bool = False) -> List[_Candid
                             [(value, -1)], "checks", None, is_check=True, check_number=number, redacted=not number,
                         )
                     )
+                last_was_txn = False
+                continue
+
+            if DATE_RANGE_RE.match(line) and not AMOUNT_RE.search(line):
+                pending = None
                 last_was_txn = False
                 continue
 
@@ -581,7 +607,8 @@ def auto_parse(
     candidates = [c for c in candidates if c.description != "__control__"]
     real = [c for c in candidates if c.description != "__balance__" and not c.is_check]
     multi = sum(1 for c in real if len(c.amounts) >= 2)
-    has_balance_column = bool(real) and multi / len(real) >= 0.6
+    # Some banks print the balance only on the last line of each day, so a minority of lines can be enough.
+    has_balance_column = multi >= 2 and multi / len(real) >= 0.25
 
     base_year = _infer_year(full_text)
     months = {d.month for d in (_to_date(c.date_raw, base_year, False) for c in candidates if c.date_raw) if d}
@@ -610,6 +637,18 @@ def auto_parse(
     verified_by_account: Dict[Optional[str], int] = {}
     redacted_rows = 0
     recovered = 0
+    # Lines since the last printed balance, per statement and account: [(row, direction is certain)].
+    waiting: Dict[Tuple, List[Tuple[Dict, bool]]] = {}
+
+    def sign_direction(sign_hint: int) -> Optional[str]:
+        if sign_hint == 1:
+            return "credit"
+        if sign_hint == DEBIT_MARK:
+            return "debit"
+        if sign_hint == -1:
+            # Banks print money out as negative; card issuers print payments and credits as negative.
+            return "credit" if is_card else "debit"
+        return None
 
     for index, cand in enumerate(candidates):
         acct = cand.account or account_number
@@ -631,51 +670,62 @@ def auto_parse(
             amounts = [(0.0, 0), amounts[0]]
             amount = None
 
+        # Best guess before any balance check, and whether it rests on firm evidence (sign, column, section).
+        guess = sign_direction(sign)
+        certain = guess is not None
+        if guess is None and cand.section in ("credit", "debit"):
+            guess, certain = cand.section, True
+        if guess is None and cand.section == "checks":
+            guess, certain = "debit", True
+        if guess is None:
+            guess = _keyword_direction(cand.description, credit_words, is_card) or default_direction
+
+        key = (cand.period, acct)
         if has_balance_column and len(amounts) >= 2 and not cand.is_check:
             bal_value, bal_sign = amounts[-1]
             running_balance = -bal_value if bal_sign < 0 else bal_value
-            previous = prev_balance.get((cand.period, acct))
+            previous = prev_balance.get(key)
+            earlier = waiting.pop(key, [])
             if previous is not None:
                 if amount is None:
-                    change = round(running_balance - previous, 2)
+                    # Amount blacked out: what the balance moved by, less the day's other lines.
+                    others = sum(r["amount"] if r["direction"] == "credit" else -r["amount"] for r, _ in earlier)
+                    change = round(running_balance - previous - others, 2)
                     amount, direction, checked = abs(change), ("credit" if change > 0 else "debit"), True
                     note = " (amount redacted; recovered from running balance)"
                     recovered += 1
-                # Try each non-balance amount; the one that explains the balance change is the transaction.
-                for value, _ in amounts[:-1]:
-                    if checked or value == 0:
-                        continue
-                    if abs(previous + value - running_balance) <= 0.011:
-                        amount, direction, checked = value, "credit", True
-                        break
-                    if abs(previous - value - running_balance) <= 0.011:
-                        amount, direction, checked = value, "debit", True
-                        break
-            prev_balance[(cand.period, acct)] = running_balance
+                else:
+                    options = [(value, sign_direction(hint)) for value, hint in amounts[:-1] if value]
+                    solved = _solve_balance(previous, running_balance, earlier, options, guess, certain)
+                    if solved:
+                        amount, direction = solved
+                        checked = True
+                if checked:
+                    verified += len(earlier)
+                    verified_by_account[acct] = verified_by_account.get(acct, 0) + len(earlier)
+                    balance_rows += len(earlier)
+            prev_balance[key] = running_balance
             balance_rows += 1
             verified += int(checked)
             verified_by_account[acct] = verified_by_account.get(acct, 0) + int(checked)
         elif len(amounts) >= 2:
             nonzero = [a for a in amounts if a[0] != 0]
             amount, sign = nonzero[0] if nonzero else amounts[0]
+            guess = sign_direction(sign) or guess
 
         if amount is None:
             note = " (amount redacted)"
-        if direction is None and sign:
-            # Banks print money out as negative; card issuers print payments and credits as negative.
-            direction = ("credit" if is_card else "debit") if sign < 0 else "credit"
-        if direction is None and cand.section in ("credit", "debit"):
-            direction = cand.section
-        if direction is None and cand.section == "checks":
-            direction = "debit"
         if direction is None:
-            direction = _keyword_direction(cand.description, credit_words, is_card) or default_direction
+            direction = guess
 
         description = (cand.description or ("Check" if cand.is_check else "Transaction")) + note
         check_number = cand.check_number
-        if check_number is None and "check" in description.lower():
+        in_check_section = cand.section == "checks"
+        if check_number is None and (in_check_section or re.search(r"\bcheck\b", description, re.IGNORECASE)):
             check_match = re.search(r"\b(\d{3,6})\b", description)
             check_number = check_match.group(1) if check_match else None
+            if in_check_section and check_number and description.strip() == check_number:
+                description = f"Check #{check_number}"
         redacted_rows += int(cand.redacted)
 
         rows.append(
@@ -699,6 +749,9 @@ def auto_parse(
                 "redacted": cand.redacted,
             }
         )
+        if has_balance_column and running_balance is None and amount is not None and not cand.is_check:
+            # No balance on this line: it is checked together with the next line that has one.
+            waiting.setdefault(key, []).append((rows[-1], certain))
 
     # An account where no running balance could be checked (e.g. a loan's payment table) has no
     # trustworthy balance column; leave its balances blank so it reconciles as "needs review".
@@ -730,6 +783,45 @@ def auto_parse(
         redacted_rows=redacted_rows,
         recovered_amounts=recovered,
     )
+
+
+def _solve_balance(
+    previous: float,
+    balance: float,
+    earlier: List[Tuple[Dict, bool]],
+    options: List[Tuple[float, Optional[str]]],
+    guess: str,
+    certain: bool,
+) -> Optional[Tuple[float, str]]:
+    """
+    Make the lines since the last printed balance add up to this one.
+
+    Each line moves the balance up (credit) or down (debit). Starting from the best guesses,
+    flip as few uncertain directions as needed until previous + changes == balance; if the
+    certain ones (signs, columns) can't be made to fit, they may be flipped too. On success the
+    earlier rows are updated in place and (amount, direction) for this line is returned.
+    """
+    for value, marked in options:
+        lines = [(row["amount"], row["direction"], is_certain) for row, is_certain in earlier]
+        lines.append((value, marked or guess, marked is not None or certain))
+        for allow_certain in (False, True):
+            flippable = [i for i, line in enumerate(lines) if allow_certain or not line[2]]
+            if len(flippable) > 12:
+                flippable = flippable[:12]
+            for size in range(len(flippable) + 1):
+                for flips in combinations(flippable, size):
+                    directions = [
+                        ("debit" if d == "credit" else "credit") if i in flips else d for i, (_, d, _) in enumerate(lines)
+                    ]
+                    total = sum(a if d == "credit" else -a for (a, _, _), d in zip(lines, directions))
+                    if abs(previous + total - balance) <= 0.011:
+                        for (row, _), new_direction in zip(earlier, directions):
+                            if row["direction"] != new_direction:
+                                row["direction"] = new_direction
+                                row["debit"] = row["amount"] if new_direction == "debit" else None
+                                row["credit"] = row["amount"] if new_direction == "credit" else None
+                        return value, directions[-1]
+    return None
 
 
 def _period_name(period: Tuple[str, str]) -> str:

@@ -9,6 +9,11 @@ text. White text on a dark banner (a styled header) is left alone.
 
 Scanned pages (images with no text layer) are read with OCR when it is
 installed (see ocr.py); otherwise they are counted so the app can say so.
+
+Statements that print money in and money out in separate columns ("Deposits/
+Additions" and "Withdrawals/Subtractions") without signs lose that column when
+the page is turned into text. On such pages each amount is tagged " CR" or
+" DR" from the column heading it sits under, so the reader knows its direction.
 """
 
 from __future__ import annotations
@@ -19,6 +24,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from io import BytesIO
 from typing import List, Optional, Sequence
+
+import re
 
 import pdfplumber
 
@@ -128,8 +135,53 @@ def _extract(file_bytes: bytes, progress=None) -> ExtractedPdf:
             chars, lines = _hide_covered_chars(page)
             result.hidden_chars += chars
             result.hidden_lines += lines
-            result.pages.append(page.extract_text() or "")
+            result.pages.append(_text_with_column_tags(page) or page.extract_text() or "")
     return result
+
+
+_CREDIT_HEADING = re.compile(r"^(deposits?|credits?|additions|deposits/?|credits/?|money\s*in)\b", re.IGNORECASE)
+_DEBIT_HEADING = re.compile(r"^(withdrawals?|debits?|subtractions|withdrawals/?|debits/?|charges|money\s*out)\b", re.IGNORECASE)
+_AMOUNT_WORD = re.compile(r"^\(?-?\$?\d{1,3}(?:,\d{3})*\.\d{2}\)?-?$")
+
+
+def _group_lines(words: List[dict], tolerance: float = 3.0) -> List[List[dict]]:
+    lines: List[List[dict]] = []
+    for word in sorted(words, key=lambda w: (round(w["top"]), w["x0"])):
+        if lines and abs(lines[-1][0]["top"] - word["top"]) <= tolerance:
+            lines[-1].append(word)
+        else:
+            lines.append([word])
+    return [sorted(line, key=lambda w: w["x0"]) for line in lines]
+
+
+def _text_with_column_tags(page) -> Optional[str]:
+    """Page text with amounts tagged CR/DR by column, or None if the page has no such columns."""
+    words = page.extract_words()
+    lines = _group_lines(words)
+    columns: List[tuple] = []  # (top of heading line, credit right edge, debit right edge)
+    for line in lines:
+        credit = [w for w in line if _CREDIT_HEADING.match(w["text"])]
+        debit = [w for w in line if _DEBIT_HEADING.match(w["text"])]
+        if credit and debit and not any(_AMOUNT_WORD.match(w["text"]) for w in line):
+            columns.append((line[0]["top"], credit[0]["x1"], debit[0]["x1"]))
+    if not columns:
+        return None
+    gap = abs(columns[0][1] - columns[0][2])
+    out: List[str] = []
+    for line in lines:
+        heading = [c for c in columns if c[0] < line[0]["top"]]
+        parts = []
+        for word in line:
+            text = word["text"]
+            if heading and _AMOUNT_WORD.match(text):
+                _, credit_x, debit_x = heading[-1]
+                # Amounts are right-aligned under their heading; take the nearer column if it is close.
+                to_credit, to_debit = abs(word["x1"] - credit_x), abs(word["x1"] - debit_x)
+                if min(to_credit, to_debit) < gap * 0.6:
+                    text += " CR" if to_credit < to_debit else " DR"
+            parts.append(text)
+        out.append(" ".join(parts))
+    return "\n".join(out)
 
 
 def _is_scanned(page) -> bool:
