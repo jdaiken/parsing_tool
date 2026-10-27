@@ -32,11 +32,6 @@ from auto_parser import CREDIT_WORDS
 from bank_directory import BANKS, directory_table
 
 BANK_NAMES = {bank["name"] for bank in BANKS}
-# Shown on the welcome screen; the rest are behind "See all".
-FEATURED_BANKS = [
-    "Chase", "Bank of America", "Wells Fargo", "Citibank", "U.S. Bank", "PNC Bank", "Truist", "Capital One",
-    "TD Bank", "Navy Federal Credit Union", "USAA", "American Express", "Discover",
-]
 from financial_statements import build_financial_statements
 from statement_parser import BUILT_IN_FORMAT_NAMES, ParseResult, analyze_statement, parse_statement
 from template_manager import delete_template, extract_preview_text, load_templates, save_template
@@ -131,13 +126,6 @@ st.markdown(
                     align-items: center; justify-content: center; margin-bottom: 0.7rem;}}
     .feature h4 {{margin: 0 0 0.3rem 0; font-size: 0.98rem; color: {NAVY};}}
     .feature p {{margin: 0; font-size: 0.86rem; color: #5B6575; line-height: 1.45;}}
-    .banks-panel {{background: #F7F9FC; border: 1px solid #E3E7EE; border-radius: 14px; padding: 1rem 1.15rem; margin-top: 0.9rem;}}
-    .banks-panel h4 {{margin: 0 0 0.25rem 0; font-size: 0.98rem; color: {NAVY};}}
-    .banks-panel p {{margin: 0 0 0.6rem 0; font-size: 0.86rem; color: #5B6575;}}
-    .bank-chips {{display: flex; flex-wrap: wrap; gap: 0.4rem;}}
-    .bank-chip {{font-size: 0.8rem; font-weight: 500; color: {NAVY}; background: #FFFFFF; border: 1px solid #D5DCE8;
-                 border-radius: 999px; padding: 0.22rem 0.7rem;}}
-    .bank-chip.more {{background: {NAVY}; color: #FFFFFF; border-color: {NAVY};}}
 
     .kpi-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 0.6rem 0 1rem 0;}}
     .kpi {{background: #FFFFFF; border: 1px solid #E3E7EE; border-top: 3px solid {NAVY}; border-radius: 12px;
@@ -841,19 +829,6 @@ with overview_tab:
             + "</div>",
             unsafe_allow_html=True,
         )
-        # Make the built-in bank list visible before anyone uploads anything.
-        chips = "".join(f'<span class="bank-chip">{name}</span>' for name in FEATURED_BANKS)
-        st.markdown(
-            f'<div class="banks-panel"><h4>Works with any bank</h4>'
-            f"<p>Upload statements from any bank or credit union. These {len(BANKS)} are also labelled by name "
-            f"when the name is printed on the statement. Either way, the Bank Reconciliation tab checks that "
-            f"every transaction was read correctly.</p>"
-            f"<div class=\"bank-chips\">{chips}"
-            f'<span class="bank-chip more">+ {len(BANKS) - len(FEATURED_BANKS)} more</span></div></div>',
-            unsafe_allow_html=True,
-        )
-        with st.expander(f"See all {len(BANKS)} banks labelled by name"):
-            st.dataframe(pd.DataFrame(directory_table()), width="stretch", hide_index=True, height=360)
     else:
         # Summary KPI cards: volume, risk, and cash flow totals.
         _kpis(
