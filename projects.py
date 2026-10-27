@@ -35,12 +35,16 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+# Where projects live: projects/ next to the app, or what STATEMENT_PROJECTS_PATH says (browser
+# storage in the browser version, a data volume on a server).
 PROJECTS_DIR = Path(os.environ.get("STATEMENT_PROJECTS_PATH") or Path(__file__).with_name("projects"))
-MAX_ZIP_BYTES = 200 * 1024 * 1024
+MAX_ZIP_BYTES = 200 * 1024 * 1024  # largest project file accepted when opening one
 MIN_PASSWORD = 10
 KDF = {"name": "scrypt", "n": 2**15, "r": 8, "p": 3}  # OWASP-recommended scrypt setting (32 MiB of memory)
 BLOB_MAGIC = b"BSA1"  # one encrypted file in a project folder
 CASE_MAGIC = b"BSACASE1"  # a downloaded .bsacase file
+# Encrypted into index.json at creation: decrypting it back proves a password is right without
+# touching (or revealing anything about) the project's contents.
 CHECK_TEXT = b"bank-statement-analyzer project key"
 
 
@@ -48,11 +52,16 @@ CHECK_TEXT = b"bank-statement-analyzer project key"
 
 
 def check_password(password: str) -> None:
+    """Refuse passwords shorter than MIN_PASSWORD characters (raises ValueError with a message for the user)."""
     if len(password or "") < MIN_PASSWORD:
         raise ValueError(f"Use a password of at least {MIN_PASSWORD} characters (a short phrase is easiest to remember).")
 
 
 def derive_key(password: str, salt: bytes, kdf: Optional[Dict] = None) -> bytes:
+    """
+    The 32-byte AES key for a password and salt, using the key-derivation settings stored with the
+    project (scrypt).
+    """
     kdf = kdf or KDF
     if kdf.get("name") != "scrypt":
         raise ValueError("Unsupported key format.")
@@ -61,11 +70,16 @@ def derive_key(password: str, salt: bytes, kdf: Optional[Dict] = None) -> bytes:
 
 def encrypt(key: bytes, data: bytes, label: str) -> bytes:
     """AES-256-GCM. `label` is bound to the data, so one encrypted file can't be swapped for another."""
+    # A fresh random nonce for every encryption; it's stored in front of the ciphertext.
     nonce = secrets.token_bytes(12)
     return BLOB_MAGIC + nonce + AESGCM(key).encrypt(nonce, data, label.encode("utf-8"))
 
 
 def decrypt(key: bytes, blob: bytes, label: str) -> bytes:
+    """
+    The original bytes of an encrypt() result. Raises ValueError for a wrong key, a damaged or changed
+    file, or a different `label`.
+    """
     if not blob.startswith(BLOB_MAGIC):
         raise ValueError("Not an encrypted project file.")
     try:
@@ -78,20 +92,24 @@ def decrypt(key: bytes, blob: bytes, label: str) -> bytes:
 
 
 def _now() -> str:
+    """The current local time with its time zone, for dates shown in projects and the case log."""
     return datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z").strip()
 
 
 def _slug(name: str) -> str:
+    """A folder name from a project name: lower case, letters, digits and dashes."""
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:60] or "project"
 
 
 def _safe_file_name(name: str) -> str:
+    """A statement's file name made safe to store: never a path, no unusual characters."""
     name = Path(str(name)).name  # never a path
     name = re.sub(r"[^\w.\- ()]+", "_", name).strip(" .")
     return name or "statement.pdf"
 
 
 def _folder(slug: str, base: Optional[Path] = None) -> Path:
+    """The project's folder, refusing any slug that would point outside the projects folder."""
     base = base or PROJECTS_DIR
     folder = (base / slug).resolve()
     if folder.parent != base.resolve():
@@ -100,10 +118,12 @@ def _folder(slug: str, base: Optional[Path] = None) -> Path:
 
 
 def _index(slug: str, base: Optional[Path]) -> Dict:
+    """The project's readable index.json (protected projects only)."""
     return json.loads((_folder(slug, base) / "index.json").read_text(encoding="utf-8"))
 
 
 def is_encrypted(slug: str, base: Optional[Path] = None) -> bool:
+    """True for a password-protected project; False for one made before encryption was added."""
     return (_folder(slug, base) / "index.json").exists()
 
 
@@ -128,6 +148,10 @@ def list_projects(base: Optional[Path] = None) -> List[Dict]:
 
 
 def _new_index(name: str, password: str) -> Tuple[Dict, bytes]:
+    """
+    The readable index.json for a new protected project, and its key. The index holds the name,
+    dates, the key-derivation settings with a random salt, and the password check value; nothing else.
+    """
     salt = secrets.token_bytes(16)
     key = derive_key(password, salt)
     index = {
@@ -139,6 +163,7 @@ def _new_index(name: str, password: str) -> Tuple[Dict, bytes]:
 
 
 def _empty_meta(name: str, description: str) -> Dict:
+    """The encrypted contents of a new project: details, notes, statement list and case log."""
     return {"name": name, "description": description.strip(), "created": _now(), "updated": _now(),
             "notes": "", "files": [], "file_notes": {}, "txn_notes": {}, "log": []}
 
@@ -184,6 +209,10 @@ def unlock(slug: str, password: str, base: Optional[Path] = None) -> bytes:
 
 
 def load_project(slug: str, base: Optional[Path] = None, key: Optional[bytes] = None) -> Dict:
+    """
+    Everything about a project (decrypted with `key` when it's protected), plus its slug and whether
+    it's encrypted. Raises PermissionError for a protected project without a key.
+    """
     folder = _folder(slug, base)
     if is_encrypted(slug, base):
         if key is None:
@@ -199,6 +228,10 @@ def load_project(slug: str, base: Optional[Path] = None, key: Optional[bytes] = 
 
 
 def save_project(meta: Dict, base: Optional[Path] = None, key: Optional[bytes] = None) -> None:
+    """
+    Save a project's details and notes (encrypted with `key` when it's protected), and update its last-
+    saved date.
+    """
     meta = dict(meta)
     slug = meta.pop("slug")
     meta.pop("encrypted", None)
@@ -216,6 +249,7 @@ def save_project(meta: Dict, base: Optional[Path] = None, key: Optional[bytes] =
 
 
 def _stored_name(entry: Dict) -> str:
+    """The file name a statement is stored under in the project's statements/ folder."""
     return entry.get("stored") or _safe_file_name(entry["name"])
 
 
@@ -238,6 +272,7 @@ def add_files(slug: str, files: List[Tuple[str, bytes]], base: Optional[Path] = 
         while safe in taken:
             safe, n = f"{stem} ({n}){suffix}", n + 1
         if encrypted:
+            # Stored under a random name; the real file name is only inside the encrypted metadata.
             stored = f"{secrets.token_hex(8)}.enc"  # the real file name is only inside the encrypted metadata
             (folder / stored).write_bytes(encrypt(key, data, f"statement:{stored}"))
         else:
@@ -254,6 +289,7 @@ def add_files(slug: str, files: List[Tuple[str, bytes]], base: Optional[Path] = 
 
 
 def read_files(slug: str, base: Optional[Path] = None, key: Optional[bytes] = None) -> List[Tuple[str, bytes]]:
+    """Every statement in the project as (file name, bytes), decrypted."""
     meta = load_project(slug, base, key)
     folder = _folder(slug, base) / "statements"
     out = []
@@ -269,6 +305,7 @@ def read_files(slug: str, base: Optional[Path] = None, key: Optional[bytes] = No
 
 
 def remove_file(slug: str, name: str, base: Optional[Path] = None, key: Optional[bytes] = None) -> None:
+    """Take a statement out of the project, with its notes, and record it in the case log."""
     meta = load_project(slug, base, key)
     entry = next((f for f in meta["files"] if f["name"] == name), None)
     if entry is None:
@@ -285,6 +322,7 @@ def remove_file(slug: str, name: str, base: Optional[Path] = None, key: Optional
 
 
 def delete_project(slug: str, base: Optional[Path] = None) -> None:
+    """Erase a project's folder and everything in it."""
     shutil.rmtree(_folder(slug, base))
 
 
@@ -316,6 +354,7 @@ def protect(slug: str, password: str, base: Optional[Path] = None) -> bytes:
 
 
 def _zip_project(meta: Dict, files: List[Tuple[str, bytes]]) -> bytes:
+    """The project as a plain zip (project.json plus statements/), which export_case then encrypts."""
     buffer = io.BytesIO()
     clean = {k: v for k, v in meta.items() if k not in ("slug", "encrypted")}
     clean["files"] = [{k: v for k, v in f.items() if k != "stored"} for f in clean["files"]]
@@ -333,6 +372,7 @@ def export_case(slug: str, password: str, base: Optional[Path] = None, key: Opti
     log_event(meta, "Project downloaded (encrypted)")
     save_project(meta, base, key)
     plain = _zip_project(meta, read_files(slug, base, key))
+    # File layout: magic, header length, header (key-derivation settings and salt), encrypted zip.
     salt = secrets.token_bytes(16)
     header = json.dumps(dict(KDF, salt=base64.b64encode(salt).decode("ascii"))).encode("utf-8")
     body = encrypt(derive_key(password, salt), plain, "case")

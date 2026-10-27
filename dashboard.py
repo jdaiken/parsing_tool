@@ -49,6 +49,7 @@ def prepare(transactions: pd.DataFrame, category_names: Dict[str, str]) -> pd.Da
 
 
 def _style(fig: go.Figure, height: int = 340) -> go.Figure:
+    """The dashboard's common chart look: white background, brand font, legend on top, no vertical grid."""
     fig.update_layout(
         template="plotly_white",
         height=height,
@@ -159,6 +160,7 @@ def weekday_pattern(df: pd.DataFrame) -> go.Figure:
     return _style(fig, height=280)
 
 
+# Columns in the CSV and Excel exports, and their headings.
 EXPORT_COLUMNS = {
     "date": "Date", "account": "Statement / account", "description": "Description", "payee": "Payee", "category": "Type",
     "money_in": "Money in", "money_out": "Money out", "running_balance": "Balance", "risk": "Risk",
@@ -168,6 +170,10 @@ EXPORT_COLUMNS = {
 
 
 def export_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    The filtered transactions with readable column names (plus the Note column when a project is open),
+    for CSV and Excel.
+    """
     out = df[list(EXPORT_COLUMNS)].rename(columns=EXPORT_COLUMNS).copy()
     if "note" in df:
         out["Note"] = df["note"].values
@@ -176,9 +182,11 @@ def export_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def to_excel(df: pd.DataFrame) -> bytes:
+    """The filtered transactions as an .xlsx workbook."""
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         export_frame(df).to_excel(writer, sheet_name="Filtered transactions", index=False)
+        # Readable column widths, and dollar formats on the money columns.
         sheet = writer.sheets["Filtered transactions"]
         for column, width in zip("ABCDEFGHIJKL", (12, 34, 48, 24, 20, 12, 12, 12, 9, 10, 48, 10)):
             sheet.column_dimensions[column].width = width

@@ -15,6 +15,7 @@ PDF = (DEMO / "1_checking_2025-03.pdf").read_bytes()
 
 @pytest.fixture
 def project(tmp_path):
+    """An encrypted project holding one statement, case notes and a transaction note."""
     slug, key = P.create_project("Case 2025-014", "Confidential description", PASSWORD, tmp_path)
     P.add_files(slug, [("Hartwell March.pdf", PDF)], tmp_path, key)
     meta = P.load_project(slug, tmp_path, key)
@@ -25,6 +26,7 @@ def project(tmp_path):
 
 
 def test_nothing_readable_on_disk(project):
+    """No statement text, file name, note or description can be read from the project folder."""
     base, slug, _ = project
     stored = b"".join(p.read_bytes() for p in (base / slug).rglob("*") if p.is_file())
     for secret in (b"Hartwell", b"%PDF", b"Secret case note", b"Confidential", b"Ask the bank"):
@@ -34,6 +36,7 @@ def test_nothing_readable_on_disk(project):
 
 
 def test_password_is_required(project):
+    """A protected project opens only with its password."""
     base, slug, key = project
     with pytest.raises(PermissionError):
         P.load_project(slug, base)
@@ -44,11 +47,13 @@ def test_password_is_required(project):
 
 
 def test_short_password_rejected(tmp_path):
+    """Passwords under the minimum length are refused."""
     with pytest.raises(ValueError):
         P.create_project("Case 1", "", "short", tmp_path)
 
 
 def test_tampering_is_detected(project):
+    """Changing one byte of an encrypted statement is detected."""
     base, slug, key = project
     blob = next((base / slug / "statements").glob("*.enc"))
     data = bytearray(blob.read_bytes())
@@ -59,6 +64,7 @@ def test_tampering_is_detected(project):
 
 
 def test_download_and_reopen(project, tmp_path_factory):
+    """A downloaded .bsacase file is unreadable, needs its password, and reopens with everything intact."""
     base, slug, key = project
     case = P.export_case(slug, "another long password", base, key)
     assert case.startswith(P.CASE_MAGIC) and b"Secret" not in case and b"%PDF" not in case
@@ -74,12 +80,14 @@ def test_download_and_reopen(project, tmp_path_factory):
 
 
 def test_case_log_records_fingerprints(project):
+    """The case log records each added statement's SHA-256."""
     base, slug, key = project
     log = P.load_project(slug, base, key)["log"]
     assert any(e["event"] == "Statement added" and P.hashlib.sha256(PDF).hexdigest() in e["detail"] for e in log)
 
 
 def test_older_unencrypted_project_can_be_protected(tmp_path):
+    """A project from before encryption can be protected, leaving no plain copies behind."""
     folder = tmp_path / "old"
     (folder / "statements").mkdir(parents=True)
     (folder / "statements" / "a.pdf").write_bytes(PDF)
@@ -91,6 +99,7 @@ def test_older_unencrypted_project_can_be_protected(tmp_path):
 
 
 def test_import_cannot_write_outside_its_folder(tmp_path):
+    """A crafted project file can't write outside the projects folder (no path traversal)."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as zf:
         zf.writestr("project.json", json.dumps({"name": "Evil", "files": [{"name": "../../../escape.pdf"}]}))

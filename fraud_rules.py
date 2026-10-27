@@ -22,6 +22,7 @@ import pandas as pd
 
 from payees import counterparty
 
+# Words that identify each kind of activity in a transaction description.
 GAMBLING_RE = re.compile(
     r"casino|gaming|poker|lotter|lotto|sportsbook|draftkings|fanduel|betmgm|caesars|slots?\b|racetrack|\bbingo\b|\bkeno\b",
     re.IGNORECASE,
@@ -34,12 +35,15 @@ CASH_RE = re.compile(r"\batm\b|cash withdrawal|withdrawal.*branch|teller|cash ad
 CASH_DEPOSIT_RE = re.compile(r"cash deposit|atm cash deposit|deposit.*cash", re.IGNORECASE)
 TRANSFER_RE = re.compile(r"zelle|venmo|cash\s*app|paypal|wire|transfer|quickpay", re.IGNORECASE)
 OVERDRAFT_RE = re.compile(r"overdraft|\bnsf\b|insufficient funds|returned item", re.IGNORECASE)
+# Risk points a finding adds to each transaction involved (see apply()).
 SEVERITY_POINTS = {"high": 35, "medium": 20, "low": 8}
+# Payee groups that aren't a person or business, so they're never a "new payee" or a duplicate payment.
 NOT_A_PAYEE = ("Fees", "Unlabelled", "Checks (payee not shown)")
 
 
 @dataclass
 class Finding:
+    """One fraud pattern found on one account: what it is, how serious, and the transactions behind it."""
     rule: str
     severity: str  # high | medium | low
     title: str
@@ -50,14 +54,20 @@ class Finding:
 
 
 def _money(value: float) -> str:
+    """$1,234.56, or -$1,234.56 for a negative amount."""
     return f"-${-value:,.2f}" if value < 0 else f"${value:,.2f}"
 
 
 def _when(ts) -> str:
+    """A date as 03/14/2025, or 'undated'."""
     return ts.strftime("%m/%d/%Y") if pd.notna(ts) else "undated"
 
 
 def _prepare(transactions: pd.DataFrame) -> pd.DataFrame:
+    """
+    The columns every rule uses: dates, money in and out, descriptions, payee names, the account series,
+    and whether a line is cash in or out.
+    """
     df = transactions.copy()
     df["date"] = pd.to_datetime(df["txn_date"], errors="coerce")
     df["out"] = pd.to_numeric(df["debit"], errors="coerce").fillna(0.0)
@@ -88,6 +98,10 @@ def find(transactions: pd.DataFrame) -> List[Finding]:
 
 
 def _gambling(g: pd.DataFrame, series: str) -> List[Finding]:
+    """
+    Casino, lottery and betting activity (ATM withdrawals at a casino count). High when it totals $1,000
+    or more.
+    """
     hits = g[g["desc"].str.contains(GAMBLING_RE) & ((g["out"] > 0) | (g["in"] > 0))]
     if hits.empty:
         return []
@@ -100,8 +114,14 @@ def _gambling(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _structuring(g: pd.DataFrame, series: str) -> List[Finding]:
+    """
+    Cash kept under the $10,000 reporting threshold: single items of $8,000 to $9,999, or sizeable items
+    ($2,000+) within a week that add up to $10,000 or more. Checked separately for withdrawals and
+    deposits.
+    """
     out: List[Finding] = []
     for kind, mask, column in (("withdrawals", g["is_cash_out"], "out"), ("deposits", g["is_cash_in"], "in")):
+        # Single items just under the $10,000 reporting threshold.
         cash = g[mask & (g[column] < 10000)]
         near = cash[cash[column] >= 8000]
         rows = set(near.index)
@@ -125,8 +145,13 @@ def _structuring(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _pass_through(g: pd.DataFrame, series: str) -> List[Finding]:
+    """
+    Money in and straight back out: a deposit of $5,000 or more, at least half of which leaves within
+    three days.
+    """
     out: List[Finding] = []
     dated = g.dropna(subset=["date"])
+    # Each deposit of $5,000 or more: did at least half of it leave within three days?
     for i, row in dated[dated["in"] >= 5000].iterrows():
         later = dated[(dated["date"] >= row["date"]) & (dated["date"] <= row["date"] + pd.Timedelta(days=3)) & (dated["out"] > 0)]
         moved = float(later["out"].sum())
@@ -143,9 +168,14 @@ def _pass_through(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _new_payees(g: pd.DataFrame, series: str) -> List[Finding]:
+    """
+    People or businesses first paid after the first month of history and paid $1,000 or more (or three
+    times). Needs at least 45 days of statements.
+    """
     dated = g.dropna(subset=["date"])
     if dated.empty or (dated["date"].max() - dated["date"].min()).days < 45:
         return []  # needs at least a month of history to know what is "new"
+    # The first 30 days show who is normally paid; payees first seen after that are "new".
     baseline_end = dated["date"].min() + pd.Timedelta(days=30)
     out: List[Finding] = []
     paid = dated[(dated["out"] > 0) & ~dated["payee"].isin(NOT_A_PAYEE) & ~dated["payee"].str.startswith("Cash")]
@@ -166,6 +196,7 @@ def _new_payees(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _gift_cards(g: pd.DataFrame, series: str) -> List[Finding]:
+    """Gift card purchases, a common way scammers have victims pay. High when they total $500 or more."""
     hits = g[g["desc"].str.contains(GIFT_CARD_RE) & (g["out"] > 0)]
     if hits.empty:
         return []
@@ -179,6 +210,7 @@ def _gift_cards(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _cash_spike(g: pd.DataFrame, series: str) -> List[Finding]:
+    """A month whose cash withdrawals are at least three times the first month's (and at least $1,000)."""
     dated = g.dropna(subset=["date"])
     if dated.empty:
         return []
@@ -186,6 +218,7 @@ def _cash_spike(g: pd.DataFrame, series: str) -> List[Finding]:
     months = dated["date"].dt.to_period("M").drop_duplicates().sort_values()
     if len(months) < 2:
         return []
+    # The first month is the baseline; a later month with three times as much cash (and at least $1,000) stands out.
     first_month = months.iloc[0]
     baseline = float(monthly.get(first_month, 0.0))
     out: List[Finding] = []
@@ -203,11 +236,13 @@ def _cash_spike(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _balance_drain(g: pd.DataFrame, series: str) -> List[Finding]:
+    """The balance falls to half its peak or less. Uses the printed running balances."""
     balances = g.dropna(subset=["date"]).assign(balance=pd.to_numeric(g["running_balance"], errors="coerce")).dropna(subset=["balance"])
     if len(balances) < 4:
         return []
     start, end = float(balances["balance"].iloc[0]), float(balances["balance"].iloc[-1])
     peak = float(balances["balance"].max())
+    # Flagged when the balance ends at half its peak or less (and the peak was at least $1,000).
     if peak >= 1000 and end <= 0.5 * peak:
         when = balances["date"].iloc[balances["balance"].values.argmax()]
         return [Finding(
@@ -220,6 +255,7 @@ def _balance_drain(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _overdrafts(g: pd.DataFrame, series: str) -> List[Finding]:
+    """Overdraft, insufficient-funds and returned-item fees."""
     hits = g[g["desc"].str.contains(OVERDRAFT_RE)]
     if hits.empty:
         return []
@@ -232,12 +268,14 @@ def _overdrafts(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _duplicates(g: pd.DataFrame, series: str) -> List[Finding]:
+    """The same amount ($100 or more) paid to the same payee twice within three days. Cash is left out."""
     out: List[Finding] = []
     # Cash is left out: two same-size ATM withdrawals are normal, two same-size checks to one payee are not.
     paid = g[(g["out"] >= 100) & ~g["payee"].isin(NOT_A_PAYEE) & ~g["is_cash_out"]].dropna(subset=["date"])
     seen = set()
     for (payee, amount), rows in paid.groupby(["payee", "out"]):
         rows = rows.sort_values("date")
+        # The same amount to the same payee within three days.
         for a, b in zip(rows.index[:-1], rows.index[1:]):
             if (rows.loc[b, "date"] - rows.loc[a, "date"]).days <= 3 and (a, b) not in seen:
                 seen.add((a, b))
@@ -250,6 +288,8 @@ def _duplicates(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _round_transfers(g: pd.DataFrame, series: str) -> List[Finding]:
+    # Transfers of $500 or more in exact hundreds; two or more make a pattern.
+    """Two or more transfers in exact hundreds of dollars ($500 or more each)."""
     hits = g[(g["out"] >= 500) & (g["out"] % 100 == 0) & g["desc"].str.contains(TRANSFER_RE)]
     if len(hits) < 2:
         return []
@@ -262,6 +302,7 @@ def _round_transfers(g: pd.DataFrame, series: str) -> List[Finding]:
 
 
 def _cash_advances(g: pd.DataFrame, series: str) -> List[Finding]:
+    """Credit card cash advances (their fees are left out)."""
     hits = g[g["desc"].str.contains("cash advance", case=False) & (g["out"] > 0) & ~g["desc"].str.contains(r"\bfee\b", case=False)]
     if hits.empty:
         return []
@@ -282,6 +323,7 @@ def apply(transactions: pd.DataFrame) -> Tuple[pd.DataFrame, List[Finding], pd.D
     tx = transactions.copy()
     if tx.empty:
         return tx, findings, pd.DataFrame(columns=["flag_type", "severity", "message", "txn_date", "amount", "description", "check_number"])
+    # Add each finding's points to every transaction it names, and its title to that transaction's reasons.
     points: Dict[int, int] = {}
     reasons: Dict[int, List[str]] = {}
     for finding in findings:
@@ -294,6 +336,7 @@ def apply(transactions: pd.DataFrame) -> Tuple[pd.DataFrame, List[Finding], pd.D
         tx.at[row, "risk_level"] = "high" if score >= 70 else "medium" if score >= 40 else "low"
         existing = [] if tx.at[row, "risk_reasons"] in (None, "baseline profile") else str(tx.at[row, "risk_reasons"]).split("; ")
         tx.at[row, "risk_reasons"] = "; ".join(dict.fromkeys(reasons[row] + existing))
+    # One flag row per finding, in the same columns as the per-file flags.
     flags = pd.DataFrame(
         [
             {

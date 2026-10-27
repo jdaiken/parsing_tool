@@ -7,11 +7,13 @@ from authenticity import WARN, verdict
 
 @pytest.mark.parametrize("name", ["1_checking_2025-03.pdf", "2_checking_2025-04.pdf", "3_checking_2025-05.pdf", "4_credit_card_2025-05.pdf"])
 def test_genuine_statements_are_clean(parse, name):
+    """The genuine demo statements raise no warnings."""
     checks = parse(name).document_checks
     assert verdict(checks)[0] == "clean", [c.name for c in checks if c.status == WARN]
 
 
 def test_family_copy_shows_all_nine_planted_edits(parse):
+    """Exactly the nine edits planted in the family copy are reported, with the lines involved."""
     checks = parse("5_checking_2025-04_family_copy.pdf").document_checks
     warned = {c.name for c in checks if c.status == WARN}
     assert warned == {

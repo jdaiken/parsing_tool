@@ -96,6 +96,7 @@ APP_FILES = [
     "demo/4_credit_card_2025-05.pdf", "demo/5_checking_2025-04_family_copy.pdf",
     "demo/6_checking_2025-05_scanned_redacted.pdf", "demo/ANSWER_KEY.md", "demo/make_demo_case.py",
     "LICENSE", "NOTICE", "requirements.txt", "requirements-lock.txt", "README.md", "SECURITY.md", "docs/SECURITY_AND_DATA_HANDLING.md", "docs/UNIVERSITY_DEPLOYMENT.md",
+    "docs/Bank_Statement_Analyzer_User_Guide.pdf", "docs/Bank_Statement_Analyzer_Implementation_Guide.pdf",
     "start.bat", "start.sh", ".streamlit/config.toml",
 ]
 
@@ -118,18 +119,21 @@ HEADERS = {
 
 
 def fetch(url: str) -> bytes:
+    """Download one file (printing what's being fetched)."""
     print(f"  downloading {url}")
     with urllib.request.urlopen(url, timeout=120) as response:
         return response.read()
 
 
 def check_sha256(data: bytes, expected: str, what: str) -> None:
+    """Stop the build if the data's SHA-256 isn't the pinned value."""
     actual = hashlib.sha256(data).hexdigest()
     if actual != expected:
         sys.exit(f"Fingerprint mismatch for {what}: expected {expected}, got {actual}. Stopping.")
 
 
 def check_npm(data: bytes, integrity: str, what: str) -> None:
+    """Stop the build if an npm package doesn't match its pinned integrity value ("sha512-...")."""
     algorithm, expected = integrity.split("-", 1)
     actual = base64.b64encode(hashlib.new(algorithm, data).digest()).decode("ascii")
     if actual != expected:
@@ -137,6 +141,7 @@ def check_npm(data: bytes, integrity: str, what: str) -> None:
 
 
 def npm_package(spec: tuple, cache: Path) -> tarfile.TarFile:
+    """An npm package's tarball (from the cache, or downloaded), verified, opened for reading."""
     url, integrity = spec
     cached = cache / url.rsplit("/", 1)[1]
     data = cached.read_bytes() if cached.exists() else fetch(url)
@@ -146,6 +151,11 @@ def npm_package(spec: tuple, cache: Path) -> tarfile.TarFile:
 
 
 def build(out: Path, pyodide_dir: Path | None, cache: Path) -> None:
+    """
+    Assemble the self-contained folder at `out`: stlite, Pyodide with only the packages the app needs,
+    the PyPI packages (registered in Pyodide's package index), the app files, the pages, the server
+    settings and SHA256SUMS.txt.
+    """
     if out.exists():
         shutil.rmtree(out)
     vendor = out / "vendor"
@@ -221,6 +231,10 @@ def build(out: Path, pyodide_dir: Path | None, cache: Path) -> None:
 
 
 def write_pages(out: Path) -> None:
+    """
+    Write index.html (with the Content Security Policy) and boot.js, which starts the app from the
+    bundled files only.
+    """
     files = APP_FILES
     (out / "boot.js").write_text(
         f"""// Starts the app. Everything is loaded from this server (see the Content Security Policy in index.html).
@@ -331,6 +345,7 @@ def write_server_configs(out: Path) -> None:
 
 
 def write_checksums(out: Path) -> None:
+    """SHA256SUMS.txt: the fingerprint of every file in the folder, for IT to verify a deployment."""
     lines = []
     for path in sorted(p for p in out.rglob("*") if p.is_file() and p.name != "SHA256SUMS.txt"):
         lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(out).as_posix()}")
@@ -338,6 +353,7 @@ def write_checksums(out: Path) -> None:
 
 
 def main() -> None:
+    """Command line: python tools/build_offline.py [--out DIR] [--pyodide-dir DIR] [--cache DIR]."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=ROOT / "dist" / "offline")
     parser.add_argument("--pyodide-dir", type=Path, help="An already-downloaded Pyodide 0.29.3 'full' distribution")

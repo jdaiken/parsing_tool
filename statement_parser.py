@@ -1,3 +1,20 @@
+"""
+Reads one statement PDF into a table of transactions, with categories, risk scores and flags.
+
+parse_statement() is the entry point the app calls for every uploaded file:
+
+1. pdf_text.extract_pdf gets each page's text (OCR for scanned pages, redaction-aware).
+2. A reader turns the text into transaction rows. A saved bank (template_manager) is used if
+   its keywords match; two older built-in layouts have their own readers; everything else,
+   which is nearly every statement, goes to the generic reader in auto_parser.py.
+3. Each row gets a category (deposit, check, card purchase, ...) and a simple risk score.
+4. Per-file flags are added (duplicates, large and round amounts, check-number gaps), and
+   authenticity.check_document runs the document checks.
+
+Fraud patterns that need several statements together (structuring, new payees, ...) are
+found later, across all uploaded files, by fraud_rules.py.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -19,9 +36,10 @@ from authenticity import check_document
 from pdf_text import extract_pdf
 from template_manager import detect_template, load_templates
 
-AMOUNT_RE = re.compile(r"\$?\d[\d,]*\.\d{2}")
-DATE_SLASH_RE = re.compile(r"^\d{2}/\d{2}/\d{4}")
-DATE_DASH_RE = re.compile(r"\b\d{2}-\d{2}\b")
+# Patterns used by the older line-based readers below (the generic reader has its own).
+AMOUNT_RE = re.compile(r"\$?\d[\d,]*\.\d{2}")  # 1,234.56 or $1,234.56
+DATE_SLASH_RE = re.compile(r"^\d{2}/\d{2}/\d{4}")  # a line starting 03/14/2025
+DATE_DASH_RE = re.compile(r"\b\d{2}-\d{2}\b")  # 03-14
 
 # Checked in order, as whole words ("fee" doesn't match "coffee"); the first match wins.
 CATEGORY_RULES = {
@@ -37,6 +55,7 @@ CATEGORY_RULES = {
 
 @dataclass
 class ParseResult:
+    """Everything read from one statement file, as the app displays and exports it."""
     transactions: pd.DataFrame
     flags: pd.DataFrame
     raw_text: pd.DataFrame
@@ -47,6 +66,7 @@ class ParseResult:
 
 
 def _to_amount(text: str) -> Optional[float]:
+    """'$1,234.56' -> 1234.56; None if the text isn't an amount."""
     if text is None:
         return None
     cleaned = text.replace("$", "").replace(",", "").strip()
@@ -59,10 +79,12 @@ def _to_amount(text: str) -> Optional[float]:
 
 
 def _extract_pdf_pages(file_bytes: bytes) -> List[str]:
+    """The text of each page (see pdf_text.extract_pdf)."""
     return extract_pdf(file_bytes).pages
 
 
 def _detect_format(full_text: str) -> str:
+    """Which of the two older built-in layouts the statement is, if either; otherwise 'generic_statement'."""
     lowered = full_text.lower()
     if "true checking" in lowered and "account activity summary" in lowered:
         return "carson_bank_statement"
@@ -72,6 +94,7 @@ def _detect_format(full_text: str) -> str:
 
 
 def _parse_meta(text: str) -> Dict[str, Optional[str]]:
+    """The account number and statement date printed in the header, when they can be found."""
     account_match = re.search(r"Account(?:\s+#|\s+Number:)\s*([0-9]+)", text, re.IGNORECASE)
     account_number = account_match.group(1) if account_match else None
 
@@ -88,12 +111,17 @@ def _parse_meta(text: str) -> Dict[str, Optional[str]]:
 
 
 def _classify_direction(description: str, section: str = "") -> str:
+    """
+    'credit' when the description (or section) says money came in, otherwise 'debit'. Used by the older
+    readers only.
+    """
     check_text = f"{description} {section}".lower()
     credit_terms = ("deposit", "credit", "refund", "reversal")
     return "credit" if any(term in check_text for term in credit_terms) else "debit"
 
 
 def _safe_date(raw_date: str, statement_date: Optional[str]) -> Optional[datetime]:
+    """Parse '03/14/2025' or '03-14' (taking the year from the statement date); None if it can't be read."""
     for fmt in ("%m/%d/%Y", "%m-%d-%Y", "%m-%d/%Y"):
         try:
             return datetime.strptime(raw_date, fmt)
@@ -116,6 +144,13 @@ def _categorize_transaction(
     check_number: Optional[str],
     statement_kind: str = "bank",
 ) -> str:
+    """
+    The transaction's category, for summaries, charts and risk scoring.
+
+    Credit card statements use card categories (payment, credit, fee, cash advance, purchase). For bank
+    statements, checks are recognized first, then CATEGORY_RULES are tried in order as whole words;
+    whatever doesn't match is other_credit or other_debit.
+    """
     text = (description or "").lower()
     if statement_kind == "credit_card":
         if direction == "credit":
@@ -141,6 +176,11 @@ def _categorize_transaction(
 
 
 def _score_transaction_risk(row: pd.Series, large_txn_threshold: float) -> tuple[int, str, str]:
+    # Points add up from a baseline of 5 and are capped at 100: 70+ is high, 40+ medium.
+    """
+    A simple per-transaction risk score: (score 0-100, 'low'/'medium'/'high', reasons). Fraud patterns
+    found across statements (fraud_rules.py) add to it later.
+    """
     score = 5
     reasons: List[str] = []
 
@@ -150,6 +190,7 @@ def _score_transaction_risk(row: pd.Series, large_txn_threshold: float) -> tuple
     check_number = row.get("check_number")
     txn_date = row.get("txn_date")
 
+    # Size, relative to the "Flag transactions over" setting.
     if amount >= large_txn_threshold * 3:
         score += 35
         reasons.append("very large amount")
@@ -160,6 +201,7 @@ def _score_transaction_risk(row: pd.Series, large_txn_threshold: float) -> tuple
         score += 15
         reasons.append("threshold amount")
 
+    # Kinds of transaction that move money out of reach (cash, transfers, checks) weigh more.
     if category in {"atm_withdrawal", "ach_transfer"}:
         score += 18
         reasons.append("cash/transfer movement")
@@ -173,6 +215,7 @@ def _score_transaction_risk(row: pd.Series, large_txn_threshold: float) -> tuple
         score += 10
         reasons.append("loan-linked activity")
 
+    # Habits common in fraud: round amounts, corrections, unusual check numbers, weekends.
     if amount > 0 and float(amount).is_integer():
         score += 8
         reasons.append("round-dollar amount")
@@ -204,12 +247,14 @@ def _parse_carson_lines(
     account_number: Optional[str],
     statement_date: Optional[str],
 ) -> List[Dict]:
+    """Reader for the older built-in 'Carson Bank' layout. Kept as a fallback; the generic reader handles it first."""
     rows: List[Dict] = []
     pending: Optional[Dict] = None
 
     for page_number, page_text in enumerate(pages, start=1):
         lines = [ln.strip() for ln in page_text.splitlines() if ln.strip()]
         for line_number, line in enumerate(lines, start=1):
+            # A dated line starts a transaction; its amounts may be on the same line or the next.
             if DATE_SLASH_RE.match(line):
                 date_text = line[:10]
                 body = line[10:].strip()
@@ -262,6 +307,7 @@ def _parse_carson_lines(
                 )
                 continue
 
+            # A transaction whose amount wasn't on its dated line: finish it, or add to its description.
             if pending:
                 if AMOUNT_RE.search(line):
                     amounts = AMOUNT_RE.findall(line)
@@ -296,6 +342,10 @@ def _parse_legacy_lines(
     account_number: Optional[str],
     statement_date: Optional[str],
 ) -> List[Dict]:
+    """
+    Reader for the older built-in 'Connections Checking' layout, whose deposits, debits and checks are
+    listed in separate sections.
+    """
     rows: List[Dict] = []
     section = ""
     recent_section_lines: List[str] = []
@@ -304,6 +354,7 @@ def _parse_legacy_lines(
         lines = [ln.strip() for ln in page_text.splitlines() if ln.strip()]
         for line_number, line in enumerate(lines, start=1):
             lower = line.lower()
+            # Section headings decide the direction of everything below them.
             if "deposits & other credits account" in lower:
                 section = "deposits"
                 recent_section_lines.clear()
@@ -368,6 +419,7 @@ def _parse_legacy_lines(
                     desc_candidate = desc_candidate.replace(dt, "")
                 desc_candidate = re.sub(r"\b\d{6,}\b", "", desc_candidate)
                 desc_candidate = re.sub(r"\s+", " ", desc_candidate).strip(" -")
+                # A line with only a date and amount takes its description from the lines just above it.
                 if len(desc_candidate) < 6 and recent_section_lines:
                     desc_candidate = " ".join(recent_section_lines).strip()
 
@@ -396,6 +448,10 @@ def _parse_legacy_lines(
 
 
 def _custom_direction(description: str, template: Dict) -> str:
+    """
+    Direction for a saved bank's line: money in if a credit keyword appears, otherwise the bank's
+    default direction.
+    """
     text = (description or "").lower()
     credit_terms = template.get("credit_keywords", [])
     if any(term in text for term in credit_terms):
@@ -410,6 +466,10 @@ def _parse_custom_lines(
     statement_date: Optional[str],
     template: Dict,
 ) -> List[Dict]:
+    """
+    Reader for saved banks that use one of the two line-based styles (most saved banks use the generic
+    reader instead).
+    """
     rows: List[Dict] = []
     parse_style = template.get("parse_style", "slash_leading_amount_balance")
     template_name = str(template.get("template_name", "custom_template")).strip() or "custom_template"
@@ -481,12 +541,17 @@ def _parse_custom_lines(
 
 
 def _build_flags(df: pd.DataFrame, large_txn_threshold: float) -> pd.DataFrame:
+    """
+    Per-file flags for the Red Flags tab: duplicates, round amounts of $500 or more, large amounts,
+    check-number gaps, and every medium- or high-risk transaction.
+    """
     if df.empty:
         return pd.DataFrame(
             columns=["flag_type", "severity", "message", "txn_date", "amount", "description", "check_number"]
         )
 
     flags: List[Dict] = []
+    # Exact duplicates: same date, amount and description.
     key_cols = ["txn_date_raw", "amount", "description"]
     dupes = df[df.duplicated(key_cols, keep=False)]
     for _, row in dupes.iterrows():
@@ -517,6 +582,7 @@ def _build_flags(df: pd.DataFrame, large_txn_threshold: float) -> pd.DataFrame:
             }
         )
 
+    # Above the "Flag transactions over" setting.
     large = df[df["amount"].fillna(0) >= large_txn_threshold]
     for _, row in large.iterrows():
         flags.append(
@@ -531,6 +597,7 @@ def _build_flags(df: pd.DataFrame, large_txn_threshold: float) -> pd.DataFrame:
             }
         )
 
+    # Missing check numbers between the lowest and highest check that cleared.
     checks = (
         df["check_number"]
         .dropna()
@@ -556,6 +623,7 @@ def _build_flags(df: pd.DataFrame, large_txn_threshold: float) -> pd.DataFrame:
                     }
                 )
 
+    # Every medium- and high-risk transaction from the risk score.
     elevated = df[df["risk_level"].isin(["high", "medium"])].copy()
     for _, row in elevated.iterrows():
         flags.append(
@@ -594,6 +662,7 @@ class StatementAnalysis:
     preview: pd.DataFrame
 
 
+# How the older built-in layouts are named on screen.
 BUILT_IN_FORMAT_NAMES = {
     "carson_bank_statement": "Carson Bank (built in)",
     "legacy_sectioned_statement": "Connections Checking (built in)",
@@ -630,7 +699,14 @@ def analyze_statement(file_name: str, file_bytes: bytes) -> StatementAnalysis:
 
 
 def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: float = 1000.0, progress=None) -> ParseResult:
-    """Parse one statement PDF. `progress(done, total)` reports OCR progress on scanned pages."""
+    """
+    Parse one statement PDF. `progress(done, total)` reports OCR progress on scanned pages.
+
+    `file_name` names the statement (without its extension) in every table and export;
+    `large_txn_threshold` is the "Flag transactions over" setting.
+    """
+    # Text first, then facts about the whole statement: card or bank, printed opening and
+    # closing balances, which reader to use.
     extracted = extract_pdf(file_bytes, progress)
     pages = extracted.pages
     full_text = "\n".join(pages)
@@ -645,6 +721,7 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
     account_number = meta.get("account_number")
     statement_date = meta.get("statement_date")
 
+    # Pick a reader: a saved bank first, then the older built-in layouts, then the generic reader.
     if matched_template and matched_template.get("parse_style") == "auto":
         rows = auto_parse(
             pages,
@@ -674,6 +751,7 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
             rows = _parse_carson_lines(pages, statement_id, account_number, statement_date)
             rows.extend(_parse_legacy_lines(pages, statement_id, account_number, statement_date))
 
+    # Every reader's rows end up with the same columns, in this order.
     tx_columns = [
         "statement_id",
         "bank_format",
@@ -719,6 +797,7 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
     transactions["statement_closing_balance"] = closing_balance
     transactions["redacted"] = transactions["redacted"].fillna(False).astype(bool)
     if not transactions.empty:
+        # Proper types, then a category and a risk score for each row, then date order.
         transactions["txn_date"] = pd.to_datetime(transactions["txn_date"], errors="coerce")
         transactions["amount"] = pd.to_numeric(transactions["amount"], errors="coerce")
         transactions["debit"] = pd.to_numeric(transactions["debit"], errors="coerce")
@@ -744,11 +823,13 @@ def parse_statement(file_name: str, file_bytes: bytes, large_txn_threshold: floa
         transactions = transactions.sort_values(["txn_date", "source_page", "source_line"]).reset_index(drop=True)
 
     flags = _build_flags(transactions, large_txn_threshold=large_txn_threshold)
+    # The text of every page, for the optional Raw_Text sheet of the workpaper.
     raw_rows = []
     for idx, page_text in enumerate(pages, start=1):
         raw_rows.append({"statement_id": statement_id, "page": idx, "text": page_text})
     raw_text = pd.DataFrame(raw_rows)
 
+    # Short remarks shown next to the file name: scanned, credit card, redacted, leaky redactions.
     notes: List[str] = []
     if extracted.ocr_pages:
         notes.append(f"Scanned: {extracted.ocr_pages} page{'s' if extracted.ocr_pages != 1 else ''} read with OCR")

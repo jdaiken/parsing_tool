@@ -61,6 +61,7 @@ def counterparty(description: str, category: str = "") -> str:
 
 
 def _clean(text: str) -> str:
+    """The first few real words of what's left (no reference numbers, dates or company suffixes), in title case."""
     for pattern in _NOISE:
         text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
     words: List[str] = [w for w in re.split(r"[\s\-*/,.]+", text) if w.isalpha() and w.lower() not in _STOP]

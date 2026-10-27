@@ -18,6 +18,7 @@ def parse():
     cache = {}
 
     def _parse(name: str):
+        """Parse a demo file (or a file in the repository root) once per test run."""
         if name not in cache:
             path = DEMO / name if (DEMO / name).exists() else ROOT / name
             cache[name] = parse_statement(path.stem, path.read_bytes())

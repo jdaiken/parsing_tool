@@ -32,6 +32,7 @@ RUN --mount=type=secret,id=ca_bundle \
 COPY *.py LICENSE NOTICE ./
 COPY assets ./assets
 COPY demo ./demo
+COPY docs/*.pdf ./docs/
 COPY .streamlit ./.streamlit
 RUN useradd --system --uid 10001 --home-dir /nonexistent app \
     && mkdir -p /data && chown app /data

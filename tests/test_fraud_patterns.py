@@ -8,11 +8,13 @@ CASE = ["1_checking_2025-03.pdf", "2_checking_2025-04.pdf", "3_checking_2025-05.
 
 
 def _findings(parse):
+    """Run the fraud rules over the four genuine demo statements together."""
     tx = pd.concat([parse(name).transactions for name in CASE], ignore_index=True)
     return fraud_rules.apply(tx)
 
 
 def test_planted_patterns_are_found(parse):
+    """Every pattern listed in demo/ANSWER_KEY.md is found."""
     _, findings, flags = _findings(parse)
     titles = {f.title for f in findings}
     for expected in (
@@ -34,16 +36,19 @@ def test_planted_patterns_are_found(parse):
 
 
 def test_structuring_lists_only_the_large_cash_items(parse):
+    """Structuring lists the four large cash withdrawals, not the small casino ATM withdrawals."""
     _, findings, _ = _findings(parse)
     structuring = next(f for f in findings if f.rule == "structuring")
     assert structuring.total == 9500 + 9800 + 9000 + 5080
 
 
 def test_findings_raise_risk(parse):
+    """Findings raise the risk of the transactions behind them."""
     tx, _, _ = _findings(parse)
     assert (tx["risk_level"] == "high").sum() >= 15
 
 
 def test_march_alone_raises_no_high_findings(parse):
+    """The normal month on its own raises nothing serious (no false alarms)."""
     findings = fraud_rules.find(parse("1_checking_2025-03.pdf").transactions)
     assert not [f for f in findings if f.severity == "high"]

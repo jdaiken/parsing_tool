@@ -127,6 +127,7 @@ def _fit(text: str, font: str, size: float, width: float) -> str:
 
 
 def money(value: float, sign: bool = True, dollar: bool = False) -> str:
+    """Format an amount as printed on the statements: '1,234.56', '- 1,234.56' for money out, optionally with a $."""
     text = f"{abs(value):,.2f}"
     if dollar:
         text = "$" + text
@@ -134,6 +135,7 @@ def money(value: float, sign: bool = True, dollar: bool = False) -> str:
 
 
 def with_balances(opening: float, rows):
+    """Add a running balance to each row; returns (rows, closing balance)."""
     balance, out = opening, []
     for when, desc, amount, cat in rows:
         balance = round(balance + amount, 2)
@@ -142,6 +144,7 @@ def with_balances(opening: float, rows):
 
 
 def summary_for(opening, rows, closing):
+    """The checking summary box: beginning balance, totals by category, ending balance."""
     totals = {cat: round(sum(r["amount"] for r in rows if r["cat"] == cat), 2) for cat in ("deposit", "check", "card", "electronic", "fee")}
     return [
         ("Beginning Balance", money(opening, dollar=True), True),
@@ -155,6 +158,7 @@ def summary_for(opening, rows, closing):
 
 
 def _header(c: canvas.Canvas, period_text: str, page: int, pages: int) -> None:
+    """Draw the page header (sample banner, bank name, period, account number) and footer."""
     c.setFillColorRGB(0.85, 0.12, 0.12)
     c.setFont("Helvetica-Bold", 7.5)
     c.drawCentredString(306, 772, BANNER)
@@ -246,6 +250,7 @@ def checking_statement(path: Path, period_text: str, opening: float, rows, *, me
 
 
 def card_statement(path: Path) -> None:
+    """Draw the May credit card statement from CARD_MAY."""
     d = CARD_MAY
     purchases = sum(t[3] for t in d["purchases"])
     advances = sum(t[3] for t in d["cash_advances"])
@@ -374,6 +379,7 @@ def scanned_redacted(source: Path, path: Path) -> None:
         draw = ImageDraw.Draw(image)
         k = 150 / 72  # points to pixels
         def box(x0, y0, x1, y1):  # PDF points, origin bottom-left
+            """Black out a rectangle given in PDF points (origin at the bottom left)."""
             draw.rectangle([x0 * k, (792 - y1) * k, x1 * k, (792 - y0) * k], fill=0)
         box(436, 724, 520, 739)  # account number
         if index == 0:
@@ -387,6 +393,7 @@ def scanned_redacted(source: Path, path: Path) -> None:
 
 
 def main() -> None:
+    """Build every file in the demo case pack."""
     march, march_close = with_balances(MARCH_OPENING, MARCH)
     april, april_close = with_balances(march_close, APRIL)
     may, may_close = with_balances(april_close, MAY)

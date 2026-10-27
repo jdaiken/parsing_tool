@@ -36,6 +36,10 @@ REDACTION_CHAR = "█"
 
 @dataclass
 class ExtractedPdf:
+    """
+    The text of every page of one PDF, plus what was found along the way (hidden redacted text, OCR'd
+    and unreadable scanned pages, black boxes on scans).
+    """
     pages: List[str]
     hidden_chars: int  # characters that were under black boxes but still present in the file
     hidden_lines: int  # lines containing such characters
@@ -45,6 +49,7 @@ class ExtractedPdf:
 
     @property
     def has_leaky_redactions(self) -> bool:
+        """True when black boxes covered text that is still in the file."""
         return self.hidden_chars > 0
 
 
@@ -103,6 +108,7 @@ def _hide_covered_chars(page) -> tuple[int, int]:
     return hidden, len(lines)
 
 
+# Recently read files, by SHA-256 of their bytes: changing a setting re-runs the app, and OCR is slow.
 _CACHE: "OrderedDict[str, ExtractedPdf]" = OrderedDict()
 
 
@@ -123,8 +129,11 @@ def extract_pdf(file_bytes: bytes, progress=None) -> ExtractedPdf:
 
 
 def _extract(file_bytes: bytes, progress=None) -> ExtractedPdf:
+    """Read every page (uncached; see extract_pdf)."""
     result = ExtractedPdf(pages=[], hidden_chars=0, hidden_lines=0)
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+        # Scanned pages go to OCR; text pages get their hidden (redacted) text removed, then their
+        # text, with amounts tagged by column where the page has money-in and money-out columns.
         scanned = [i for i, page in enumerate(pdf.pages) if _is_scanned(page)]
         for index, page in enumerate(pdf.pages):
             if index in scanned:
@@ -139,12 +148,14 @@ def _extract(file_bytes: bytes, progress=None) -> ExtractedPdf:
     return result
 
 
+# Column headings for money in and money out, and a word that is just an amount.
 _CREDIT_HEADING = re.compile(r"^(deposits?|credits?|additions|deposits/?|credits/?|money\s*in)\b", re.IGNORECASE)
 _DEBIT_HEADING = re.compile(r"^(withdrawals?|debits?|subtractions|withdrawals/?|debits/?|charges|money\s*out)\b", re.IGNORECASE)
 _AMOUNT_WORD = re.compile(r"^\(?-?\$?\d{1,3}(?:,\d{3})*\.\d{2}\)?-?$")
 
 
 def _group_lines(words: List[dict], tolerance: float = 3.0) -> List[List[dict]]:
+    """Words grouped into lines by their height on the page (within `tolerance` points), each line left to right."""
     lines: List[List[dict]] = []
     for word in sorted(words, key=lambda w: (round(w["top"]), w["x0"])):
         if lines and abs(lines[-1][0]["top"] - word["top"]) <= tolerance:
@@ -166,6 +177,7 @@ def _text_with_column_tags(page) -> Optional[str]:
             columns.append((line[0]["top"], credit[0]["x1"], debit[0]["x1"]))
     if not columns:
         return None
+    # How far apart the two columns are; an amount must sit well within that distance of a column.
     gap = abs(columns[0][1] - columns[0][2])
     out: List[str] = []
     for line in lines:
@@ -190,6 +202,10 @@ def _is_scanned(page) -> bool:
 
 
 def _read_scanned_page(file_bytes: bytes, index: int, result: ExtractedPdf) -> str:
+    """
+    OCR one scanned page. Counts it as unread when OCR isn't available (the browser version) or the page
+    can't be rendered.
+    """
     if not ocr_available():
         result.unread_scanned_pages += 1
         return ""

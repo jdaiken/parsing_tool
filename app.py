@@ -79,6 +79,11 @@ APP_FILE_PATTERNS = [
     ".dockerignore", "start.bat", "start.sh", ".streamlit/config.toml", ".vscode/*.json", ".github/*.yml",
     ".github/workflows/*.yml", "assets/*", "assets/fonts/*", "demo/*", "docs/*.md", "docs/*.pdf", "docs/guides/*", "docs/guides/img/*", "deploy/*/*", "tools/*.py", "tests/*.py",
 ]
+# The printable guides in docs/ (built from docs/guides by tools/build_guides.py): button label -> file.
+GUIDES = {
+    "User Guide": "docs/Bank_Statement_Analyzer_User_Guide.pdf",
+    "Implementation Guide": "docs/Bank_Statement_Analyzer_Implementation_Guide.pdf",
+}
 # The fictional demo case in demo/ (see demo/ANSWER_KEY.md): three months of checking and a credit card,
 # and separately a doctored "family copy" of April next to the genuine April statement.
 SAMPLE_CASE = ["demo/1_checking_2025-03.pdf", "demo/2_checking_2025-04.pdf", "demo/3_checking_2025-05.pdf", "demo/4_credit_card_2025-05.pdf"]
@@ -124,6 +129,7 @@ def _logo_html() -> str:
     )
 
 
+# The app's look, in one style sheet: JFVP colors, embedded fonts, cards, tabs and sidebar.
 st.markdown(
     f"""
     <style>
@@ -145,6 +151,7 @@ st.markdown(
     .block-container {{padding-top: 3.2rem; padding-bottom: 2rem; max-width: 1180px;}}
     h1, h2, h3, h4, h5 {{color: {NAVY}; letter-spacing: -0.01em;}}
 
+    /* Header: logo strip and the taupe title band. */
     .brand {{border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(29, 40, 68, 0.16); border: 1px solid #DADDE3;}}
     .brand-top {{display: flex; align-items: center; justify-content: space-between; gap: 1rem;
                  background: #FFFFFF; padding: 1.1rem 1.6rem; min-height: 92px; border-bottom: 4px solid {BLUE};}}
@@ -162,12 +169,14 @@ st.markdown(
     .brand-tagline {{font-family: 'Jost', system-ui, sans-serif; font-weight: 300; font-size: 1.08rem; color: #F4F2EC; margin-top: 0.45rem;}}
     .brand-privacy {{font-family: 'Jost', system-ui, sans-serif; font-weight: 400; font-size: 0.9rem; color: #FFFFFF; margin-top: 0.7rem;}}
 
+    /* Section titles with a blue marker. */
     .section-title {{font-family: 'Jost', system-ui, sans-serif; font-size: 1.15rem; font-weight: 500; color: {NAVY}; margin: 1.6rem 0 0.2rem 0;
                      padding-left: 0.65rem; border-left: 4px solid {BLUE}; line-height: 1.25;}}
     .section-sub {{font-size: 0.9rem; color: #5B6575; margin-bottom: 0.6rem; padding-left: calc(0.65rem + 4px);}}
     [data-testid="stFileUploaderDropzone"] {{border: 2px dashed {BLUE_LINE}; background: #FFFFFF; border-radius: 12px;}}
     [data-testid="stFileUploaderDropzone"]:hover {{border-color: {BLUE}; background: {BLUE_TINT};}}
 
+    /* Welcome-screen feature cards. */
     .feature-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.9rem; margin-top: 0.4rem;}}
     .feature {{background: #FFFFFF; border: 1px solid #E1E5EB; border-top: 3px solid {BLUE}; border-radius: 14px; padding: 1.1rem 1.15rem;
                box-shadow: 0 2px 8px rgba(29, 40, 68, 0.06);}}
@@ -176,6 +185,7 @@ st.markdown(
     .feature h4 {{margin: 0 0 0.3rem 0; font-size: 0.98rem; color: {NAVY};}}
     .feature p {{margin: 0; font-size: 0.86rem; color: #5B6575; line-height: 1.45;}}
 
+    /* Summary number cards (KPIs). */
     .kpi-grid {{display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin: 0.6rem 0 1rem 0;}}
     .kpi {{background: #FFFFFF; border: 1px solid #E3E7EE; border-top: 3px solid {NAVY}; border-radius: 12px;
            padding: 0.85rem 1rem; box-shadow: 0 2px 8px rgba(29, 40, 68, 0.06);}}
@@ -187,6 +197,7 @@ st.markdown(
     .kpi-value {{font-size: 1.55rem; font-weight: 700; color: #111827; margin-top: 0.2rem; font-variant-numeric: tabular-nums;}}
     .kpi-sub {{font-size: 0.8rem; color: #6B7280; margin-top: 0.1rem;}}
 
+    /* The list of uploaded files and the status pills used across the app. */
     .file-list {{display: flex; flex-direction: column; gap: 0.35rem; margin: 0.4rem 0 0.2rem 0;}}
     .file-row {{display: flex; align-items: center; gap: 0.6rem; font-size: 0.88rem; color: #1F2937;
                 background: #FFFFFF; border: 1px solid #E1E5EB; border-left: 3px solid {BLUE}; border-radius: 10px; padding: 0.45rem 0.75rem;}}
@@ -196,6 +207,7 @@ st.markdown(
     .status.warn {{background: #FEF3E2; color: #B45309;}}
     .status.bad {{background: #FDECEA; color: #B42318;}}
 
+    /* Reconciliation and document-check cards. */
     .recon-card {{background: #FFFFFF; border: 1px solid #E1E5EB; border-radius: 14px; padding: 1rem 1.15rem; margin-bottom: 0.8rem;
                   box-shadow: 0 2px 8px rgba(29, 40, 68, 0.05);}}
     .recon-head {{background: {LIGHT}; margin: -1rem -1.15rem 0.7rem -1.15rem; padding: 0.65rem 1.15rem; border-radius: 14px 14px 0 0;
@@ -205,6 +217,7 @@ st.markdown(
     .recon-math {{display: grid; grid-template-columns: 1fr auto; row-gap: 0.25rem; max-width: 420px;
                   font-size: 0.9rem; color: #374151; font-variant-numeric: tabular-nums;}}
     .recon-math .total {{border-top: 1px solid #D1D5DB; padding-top: 0.25rem; font-weight: 600; color: #111827;}}
+    /* Fraud pattern cards on the Red Flags tab. */
     .findings {{display: grid; gap: 0.6rem; margin-bottom: 1rem;}}
     .finding {{background: #FFFFFF; border: 1px solid #E1E5EB; border-left: 4px solid #D97706; border-radius: 12px; padding: 0.75rem 1rem;
                box-shadow: 0 2px 8px rgba(29, 40, 68, 0.05);}}
@@ -214,6 +227,7 @@ st.markdown(
     .finding-head .title {{font-weight: 600; color: {NAVY};}}
     .finding-head .acct {{margin-left: auto; font-size: 0.78rem; color: #6B7280;}}
     .finding p {{margin: 0.35rem 0 0; font-size: 0.88rem; color: #374151;}}
+    /* Document Check tab. */
     .doc-intro {{font-size: 0.92rem; color: #374151; max-width: 860px;}}
     .doc-row {{display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.75rem; padding: 0.55rem 0; border-top: 1px solid #EEF1F5;}}
     .doc-row .status {{justify-self: start; align-self: start;}}
@@ -223,6 +237,7 @@ st.markdown(
         background: #FFF7ED; border-radius: 6px; padding: 0.15rem 0.45rem; margin-top: 0.25rem;}}
     .status.muted {{background: #F3F4F6; color: #6B7280;}}
     .doc-warn {{color: #B42318;}}
+    /* Project tab header. */
     .project-head {{background: linear-gradient(100deg, {BLUE_TINT} 0%, #FFFFFF 70%); border: 1px solid #E1E5EB; border-left: 4px solid {BLUE};
                     border-radius: 12px; padding: 0.8rem 1.1rem; margin-bottom: 0.6rem;}}
     .project-head .project-name {{color: {NAVY}; font-size: 1.3rem; font-weight: 600;}}
@@ -231,11 +246,13 @@ st.markdown(
     .stApp p.side-note {{font-size: 0.85rem; color: #4B5563; margin-bottom: 0.4rem; line-height: 1.45;}}
     .recon-note {{font-size: 0.82rem; color: #6B7280; margin-top: 0.5rem;}}
 
+    /* Download Workpapers cards. */
     .download-card {{background: #FFFFFF; border: 1px solid #E1E5EB; border-top: 3px solid {BLUE}; border-radius: 14px; padding: 1.1rem 1.15rem;
                      min-height: 150px; box-shadow: 0 2px 8px rgba(29, 40, 68, 0.06);}}
     .download-card h4 {{margin: 0 0 0.3rem 0; color: {NAVY}; font-size: 1rem;}}
     .download-card p {{margin: 0 0 0.6rem 0; font-size: 0.86rem; color: #5B6575;}}
 
+    /* Numbered "How it works" steps in the sidebar. */
     .steps {{counter-reset: step; list-style: none; padding: 0; margin: 0.4rem 0 1rem 0;}}
     .steps li {{counter-increment: step; display: flex; gap: 0.6rem; align-items: baseline; margin: 0.5rem 0;
                 font-size: 0.9rem; color: #1F2937;}}
@@ -261,6 +278,7 @@ st.markdown(
     .stFormSubmitButton > button[kind="secondaryFormSubmit"]:hover, .stLinkButton > a[kind="secondary"]:hover {{border-color: {BLUE}; background: {BLUE_TINT}; color: {NAVY};}}
     [data-testid="stExpander"] details {{background: #FFFFFF; border: 1px solid #E1E5EB; border-radius: 10px;}}
     [data-testid="stDataFrame"], [data-testid="stDataEditor"] {{background: #FFFFFF; border-radius: 10px; box-shadow: 0 2px 8px rgba(29, 40, 68, 0.05);}}
+    /* Sidebar, footer and the "Free, always" note. */
     section[data-testid="stSidebar"] {{background: linear-gradient(180deg, {BLUE_TINT} 0%, #F1F4F8 100%); border-right: 1px solid {BLUE_LINE};}}
     section[data-testid="stSidebar"] h4 {{color: {NAVY}; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
                                           border-bottom: 1px solid {BLUE_LINE}; padding-bottom: 0.35rem; margin-top: 0.6rem;}}
@@ -334,6 +352,7 @@ def _kpis(items: List[tuple]) -> None:
 
 
 def _section(title: str, subtitle: str = "") -> None:
+    """A section heading with a blue marker, and an optional line of explanation under it."""
     sub = f'<div class="section-sub">{subtitle}</div>' if subtitle else ""
     st.markdown(f'<div class="section-title">{title}</div>{sub}', unsafe_allow_html=True)
 
@@ -351,6 +370,7 @@ def _money_cells(frame: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
 
 
 def _money_text_column(label: str):
+    """A right-aligned text column for amounts already formatted as $1,234.56."""
     return st.column_config.TextColumn(label, alignment="right")
 
 
@@ -369,6 +389,7 @@ def _parse_with_progress(name: str, data: bytes, threshold: float) -> ParseResul
     progress = st.empty()
 
     def report(done: int, total: int) -> None:
+        """Show OCR progress as scanned pages are read."""
         progress.progress(done / total, text=f"Reading scanned pages of {name}: page {done} of {total}")
 
     try:
@@ -379,6 +400,10 @@ def _parse_with_progress(name: str, data: bytes, threshold: float) -> ParseResul
 
 @st.cache_data(show_spinner=False, max_entries=20)
 def _analyze_cached(name: str, data: bytes, templates_key: str):
+    """
+    Analyze one statement for the Add a New Bank tab; cached so the preview doesn't re-read the file on
+    every click. `templates_key` changes when saved banks change.
+    """
     return analyze_statement(name, data)
 
 
@@ -390,6 +415,7 @@ class _BundledFile:
     data: bytes
 
     def getvalue(self) -> bytes:
+        """The file's bytes, like an uploaded file's getvalue()."""
         return self.data
 
 
@@ -449,8 +475,26 @@ def _app_zip(stamp: tuple) -> bytes:
 
 
 def _app_files() -> tuple:
+    """
+    Every file that makes up the app (APP_FILE_PATTERNS), with modification times so the zip is rebuilt
+    when one changes.
+    """
     found = {p for pattern in APP_FILE_PATTERNS for p in APP_DIR.glob(pattern) if p.is_file() and "__pycache__" not in p.parts}
     return tuple(sorted((p.relative_to(APP_DIR).as_posix(), p.stat().st_mtime) for p in found))
+
+
+def _guide_buttons(containers, key_prefix: str) -> None:
+    """
+    A download button for each guide that ships with this copy of the app (PDFs, so they open
+    offline too), one per container: pass the sidebar twice, or a pair of columns.
+    """
+    for container, (label, path) in zip(containers, GUIDES.items()):
+        file = APP_DIR / path
+        if file.exists():
+            container.download_button(
+                f"{label} (PDF)", data=file.read_bytes(), file_name=file.name, mime="application/pdf",
+                icon=":material/menu_book:", width="stretch", key=f"{key_prefix}_{label}",
+            )
 
 
 # A project picked in a form is applied before the picker is drawn on the next run.
@@ -531,7 +575,11 @@ with st.sidebar:
         "<li>Download your Excel workpapers</li></ol>",
         unsafe_allow_html=True,
     )
+    st.markdown("#### Guides")
+    _guide_buttons([st, st], "sidebar_guide")
+
     st.markdown("#### Settings")
+    # Settings apply to every statement read in this session.
     # Dollar amount above which transactions are flagged as "large" during parsing.
     large_txn_threshold = st.number_input("Flag transactions over ($)", min_value=100.0, value=1000.0, step=100.0)
     # Whether the exported workpaper includes a tab of raw PDF text per page.
@@ -543,6 +591,7 @@ with st.sidebar:
         _clear_session()
         st.rerun()
 
+    # Getting a copy of the app to run or change locally.
     st.markdown("#### Work on it in VS Code")
     st.markdown(
         '<p class="side-note">Get your own copy of the app to run, or change, on your computer. Run locally, '
@@ -790,6 +839,7 @@ overview_tab, dashboard_tab, transactions_tab, risk_tab, document_tab, reconcili
     tabs[name] for name in tab_names if name != "Project"
 )
 
+# Project tab: the open project's statements, notes, case log, encrypted download and erase.
 if current_project:
     with tabs["Project"]:
         slug = current_project["slug"]
@@ -901,6 +951,7 @@ if current_project:
 
 
 def _feature(icon_path: str, title: str, text: str) -> str:
+    """One card on the welcome screen: an icon (an SVG path), a title and a sentence."""
     return (
         f'<div class="feature"><div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" '
         f'stroke="{NAVY}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
@@ -908,6 +959,7 @@ def _feature(icon_path: str, title: str, text: str) -> str:
     )
 
 
+# Summary tab: the welcome screen before anything is loaded, then totals and charts.
 with overview_tab:
     if not has_data:
         # Welcome screen: what the app does, before anything is uploaded.
@@ -931,6 +983,10 @@ with overview_tab:
             f'<span class="free-copy">© 2026 {ORG_NAME}</span></div>',
             unsafe_allow_html=True,
         )
+        # The guides, for anyone opening the app for the first time.
+        _section("Guides", "How to use the analyzer, and how a university or organization can host it")
+        guide_left, guide_right, _ = st.columns([1, 1, 1.6])
+        _guide_buttons([guide_left, guide_right], "welcome_guide")
     else:
         # Summary KPI cards: volume, risk, and cash flow totals.
         _kpis(
@@ -981,6 +1037,7 @@ with overview_tab:
                 width="stretch",
             )
 
+# Dashboard tab: filters, KPIs, Plotly charts and exports of exactly the filtered rows.
 with dashboard_tab:
     if not has_data:
         st.info(EMPTY_NOTE)
@@ -1067,6 +1124,7 @@ with dashboard_tab:
             )
             e3.download_button("Interactive dashboard (.html)", report.encode(), file_name=f"dashboard_{stamp}.html", mime="text/html", icon=":material/monitoring:", width="stretch")
 
+# Transactions tab: every transaction, filterable; with a project open, a Note column saved to it.
 with transactions_tab:
     if not has_data:
         st.info(EMPTY_NOTE)
@@ -1127,6 +1185,7 @@ with transactions_tab:
         else:
             st.dataframe(table[shown_columns], column_config=column_config, width="stretch", hide_index=True, height=480)
 
+# Red Flags tab: fraud patterns found across statements, the highest-risk transactions, every flag.
 with risk_tab:
     if not has_data:
         st.info(EMPTY_NOTE)
@@ -1182,6 +1241,7 @@ with risk_tab:
                 hide_index=True,
             )
 
+# Document Check tab: each file's signs of editing (authenticity.py), with example lines.
 with document_tab:
     if not results:
         st.info(EMPTY_NOTE)
@@ -1209,6 +1269,7 @@ with document_tab:
                 unsafe_allow_html=True,
             )
 
+# Bank Reconciliation tab: one card per account showing the math against the statement.
 with reconciliation_tab:
     if not has_data:
         st.info(EMPTY_NOTE)
@@ -1256,6 +1317,7 @@ with reconciliation_tab:
                 unsafe_allow_html=True,
             )
 
+# Download Workpapers tab: the Excel workpaper and financial statements, and the evidence record.
 with export_tab:
     if not has_data:
         st.info(EMPTY_NOTE)
@@ -1304,6 +1366,7 @@ with export_tab:
         st.caption(f"{APP_NAME} {APP_VERSION} · analyzed {analyzed_at:%b %d, %Y %H:%M %Z}"
                    + (f" · analyst: {st.session_state['analyst']}" if st.session_state.get("analyst") else ""))
 
+# Add a New Bank tab: read one statement, check the preview, save the bank's name and keywords.
 with template_tab:
     # One-click onboarding: upload a statement from a new bank, check what was read, save it.
     _section("Add a new bank", "")

@@ -10,6 +10,10 @@ from workpaper_export import build_workpaper
 
 
 def test_workpaper_has_evidence_and_run_details(parse):
+    """
+    The workpaper has the Evidence and Case_Log sheets, run details on the Summary, and source columns
+    on every transaction.
+    """
     result = parse("1_checking_2025-03.pdf")
     evidence = pd.DataFrame([{"File": "1_checking_2025-03.pdf", "SHA-256": result.source["sha256"]}])
     log = pd.DataFrame([{"time": "t", "event": "Statement added", "detail": "x"}])

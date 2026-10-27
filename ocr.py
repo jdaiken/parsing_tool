@@ -31,10 +31,12 @@ _PERIOD_THOUSANDS_RE = re.compile(r"(?<![\d.,])(\d{1,3})\.(\d{3})\.(\d{2})(?![\d
 
 
 def ocr_available() -> bool:
+    """True when the OCR engine is installed (the computer and server versions; not the browser version)."""
     return RapidOCR is not None
 
 
 def _get_engine():
+    """The OCR engine, created on first use (loading its models takes a moment)."""
     global _engine
     if _engine is None:
         # Statement scans are upright; the text-direction classifier sometimes flips amounts
@@ -203,6 +205,10 @@ def _align_column(column: List[dict], anchors: List[dict], line_h: float) -> Lis
 
 def _clean_line(line: str) -> str:
     # Non-Latin characters in an English statement are misreads of redaction marks or smudges.
+    """
+    Fix the misreads OCR commonly makes on statements: smudges, period thousands separators, a slash
+    read as 1, S for $, and the XXXX marker drawn into redaction boxes.
+    """
     line = re.sub(r"[^\x00-\u024F\u2010-\u2027█]+", " XXXX ", line)
     line = _PERIOD_THOUSANDS_RE.sub(r"\1,\2.\3", line)
     # A slash read as 1/l/I in a leading date that is followed by a clean date: "04122 04/22".

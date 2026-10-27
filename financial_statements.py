@@ -1,3 +1,12 @@
+"""
+Summary financial statements workbook (Excel) built from the parsed transactions.
+
+Three sheets for a case file or a class exercise:
+- Management_Summary: statement and transaction counts, total inflows, outflows and net change;
+- Statement_of_Activities: net cash flow by month and transaction category (with Activity_Detail);
+- Cash_Position: each account's balances and status from the bank reconciliation.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -8,11 +17,13 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 
+# Header row style shared by every sheet: white bold text on dark blue.
 HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 
 
 def _style_sheet(ws) -> None:
+    """Freeze the header row, style it, and size each column to its longest value (within limits)."""
     ws.freeze_panes = "A2"
     for cell in ws[1]:
         cell.fill = HEADER_FILL
@@ -26,6 +37,7 @@ def _style_sheet(ws) -> None:
 
 
 def _format_currency_columns(ws, headers: list[str]) -> None:
+    """Show money columns (matched by header name) as $#,##0.00."""
     currency_like = {
         "amount",
         "debit",
@@ -49,7 +61,12 @@ def build_financial_statements(
     reconciliation: pd.DataFrame,
     parsed_at: datetime,
 ) -> bytes:
+    """
+    The summary financial statements workbook as .xlsx bytes. `reconciliation` is the table from
+    reconciliation.build_reconciliation_table; `parsed_at` is printed on the summary.
+    """
     output = BytesIO()
+    # Work on a copy with numeric amounts: money in is positive, money out negative.
     tx = transactions.copy()
     tx["credit"] = pd.to_numeric(tx.get("credit"), errors="coerce").fillna(0.0)
     tx["debit"] = pd.to_numeric(tx.get("debit"), errors="coerce").fillna(0.0)
@@ -73,6 +90,7 @@ def build_financial_statements(
         ]
     )
 
+    # Statement of activities: net flow per month and category, then one row per month.
     activities = pd.DataFrame(columns=["month", "txn_category", "amount"])
     activities_pivot = pd.DataFrame()
     if not tx.empty:
@@ -92,6 +110,7 @@ def build_financial_statements(
         value_cols = [c for c in activities_pivot.columns if c != "month"]
         activities_pivot["net_cash_change"] = activities_pivot[value_cols].sum(axis=1)
 
+    # Cash position comes straight from the reconciliation (already checked against the statements).
     cash_position = pd.DataFrame()
     if not reconciliation.empty:
         keep_cols = [
@@ -123,6 +142,7 @@ def build_financial_statements(
                 writer, sheet_name="Cash_Position", index=False
             )
 
+        # Same look on every sheet: styled header, sized columns, dollar formats.
         workbook = writer.book
         for sheet_name in workbook.sheetnames:
             ws = workbook[sheet_name]

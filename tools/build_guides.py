@@ -50,6 +50,7 @@ const [src, out, title, coverOut] = process.argv.slice(2);
 
 
 def render(src: Path, out: Path, title: str) -> None:
+    """Render one guide to PDF: the body with page footers, the cover without, joined into one file."""
     with tempfile.TemporaryDirectory() as work:
         script, body, cover = Path(work) / "render.js", Path(work) / "body.pdf", Path(work) / "cover.pdf"
         script.write_text(RENDER_JS, encoding="utf-8")
@@ -76,6 +77,7 @@ def chapter_pages(pdf_path: Path, titles: list[str]) -> dict[int, int]:
 
 
 def build(name: str, title: str, out: Path) -> None:
+    """Render a guide, write the page each chapter starts on into its table of contents, and render it again."""
     src = ROOT / "docs" / "guides" / name
     render(src, out, title)
     html = src.read_text(encoding="utf-8")
@@ -94,6 +96,7 @@ def build(name: str, title: str, out: Path) -> None:
 
 
 def main() -> None:
+    """Build every guide in GUIDES."""
     for name, (title, out) in GUIDES.items():
         build(name, title, out)
 

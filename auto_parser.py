@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Tuple
 
 from bank_directory import recognize_bank
 
+# Month names as they appear in dates ("Jan 5", "Sept 30").
 MONTH_NAMES = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
@@ -49,6 +50,7 @@ AMOUNT = (
     r"(?P<close>\))?(?P<suffix>-|\s?(?:CR|DR|Cr|Dr)\b)?(?![\d%])"
 )
 
+# Compiled forms, and the line shapes built from them.
 DATE_RE = re.compile(DATE, re.IGNORECASE)
 AMOUNT_RE = re.compile(AMOUNT)
 # A trailing * on a date (Amex marks some lines that way) is part of the date column.
@@ -60,9 +62,12 @@ TRAILING_DATE_RE = re.compile(
     rf"^(?P<desc>.*?\S)\s+(?P<d1>{DATE})(?:\s+(?P<d2>{DATE}))?\s+(?P<amts>[-($\d][\d,.\s$()\-CRDcrd]*)$",
     re.IGNORECASE,
 )
+# One entry in a grid of checks: "4416 07/08/19 $100.00" (number first) or "05-12 1001 75.00" (date first).
 CHECK_NUM_FIRST_RE = re.compile(rf"(?P<num>\d{{3,7}})\*?\s+(?P<date>{DATE})\s+(?P<amt>\$?\d[\d,]*\.\d{{2}})", re.IGNORECASE)
 CHECK_DATE_FIRST_RE = re.compile(rf"(?P<date>{DATE})\s+(?P<num>\d{{3,7}})\*?\s+(?P<amt>\$?\d[\d,]*\.\d{{2}})", re.IGNORECASE)
+# A date followed by an amount: daily-balance tables repeat this several times per line.
 DATE_AMOUNT_PAIR_RE = re.compile(rf"{DATE}\s+\$?\d[\d,]*\.\d{{2}}", re.IGNORECASE)
+# Characters banks use to mask account numbers ("XXXX1234", "****1234").
 MASK_CHARS = "Xx*•█"
 ACCOUNT_RE = re.compile(
     rf"(?:account|card)\s*(?:number|no\.?|#)\s*:?\s*([0-9{MASK_CHARS}][0-9{MASK_CHARS}\- ]{{2,}}[0-9{MASK_CHARS}])"
@@ -80,20 +85,25 @@ PERIOD_RE = re.compile(
 ACCOUNT_SECTION_RE = re.compile(r"^(?:[A-Za-z█\[\]]{0,10}\s*:\s*)?(?:\d{1,4}\s+)?((?:[A-Z]+\s+){0,3}(?:CHECKING|SAVINGS|MONEY MARKET))$")
 # Printed control totals: "10 Total Deposits : $8,337.98", "43 Total XXXX : $-8,754.29", "Total Checks Paid $305.00".
 CONTROL_TOTAL_RE = re.compile(r"^(?:(?P<count>\d{1,4})\s+)?total\b(?P<label>.*?)[:\s]\s*(?P<amount>-?\s?\$?\s?-?[\d,]+\.\d{2})\s*$", re.IGNORECASE)
+# Totals that aren't this period's transactions (interest, year-to-date, ...).
 CONTROL_TOTAL_SKIP_RE = re.compile(r"interest|year|ytd|today|period|in (?:19|20)\d\d", re.IGNORECASE)
+# A check summary entry whose number may be blacked out: "03/03/2008 XXXX 531.42".
 CHECK_PAIR_RE = re.compile(
     rf"(?P<date>{DATE})\s+(?:(?P<num>\d{{3,7}})\*?\s+|(?:XXXX|\[redacted\]|█+)\s+)?(?P<amt>\$?\d[\d,]*\.\d{{2}})",
     re.IGNORECASE,
 )
+# Wording that marks a credit card statement (two or more of these near the top).
 CARD_MARKERS = ("minimum payment due", "credit card", "card ending", "cash advance", "new balance", "credit limit")
-YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
+YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")  # the most common year on the statement fills in undated years
 PAGE_FOOTER_RE = re.compile(r"^page\s*\d+\s*(of\s*\d+)?$", re.IGNORECASE)
 
+# Summary lines with the period's opening and closing balance.
 OPENING_BALANCE_RE = re.compile(
     r"(previous|beginning|opening|starting|prior)\s+balance|balance\s+(forward|brought forward|last statement)",
     re.IGNORECASE,
 )
 CLOSING_BALANCE_RE = re.compile(r"(ending|closing|new)\s+balance", re.IGNORECASE)
+# Section headings: everything listed under one has the heading's direction.
 CREDIT_SECTION_RE = re.compile(r"deposits|credits|additions|interest paid", re.IGNORECASE)
 DEBIT_SECTION_RE = re.compile(
     r"withdrawals|debits|subtractions|purchases|payments|fees|charges|check card|interest charged", re.IGNORECASE
@@ -102,14 +112,18 @@ CARD_CREDIT_SECTION_RE = re.compile(r"payments|credits|refunds|returns", re.IGNO
 CARD_DEBIT_SECTION_RE = re.compile(
     r"purchases|fees|interest charged|cash advances?|balance transfers?|charges", re.IGNORECASE
 )
+# On a card, these words mean money back to the card (lowering the balance); anything else is a charge.
 CARD_CREDIT_WORDS = ("payment", "credit", "refund", "return", "reversal")
 CHECK_SECTION_RE = re.compile(r"checks(?!\s*card)|checkspaid", re.IGNORECASE)
+# Tables that repeat dates and amounts but aren't transactions: daily balances, interest, year-to-date.
 SKIP_SECTION_RE = re.compile(
     r"daily\s+(ending\s+)?balance|balance\s+summary|ledger\s+balance|interest\s+charge\s+calculation|year[-\s]to[-\s]date|\bytd\b",
     re.IGNORECASE,
 )
+# A column heading row ("Date Description Amount Balance").
 COLUMN_HEADER_RE = re.compile(r"\bdate\b.*\b(description|amount|balance|debits?|credits?|withdrawals?|deposits?)\b", re.IGNORECASE)
 
+# Last resort for a line's direction when nothing firmer is known: words in its description.
 CREDIT_WORDS = (
     "deposit", "credit", "refund", "reversal", "interest paid", "interest earned", "transfer from",
     "payroll", "direct dep", "received", "rebate", "cash back",
@@ -118,6 +132,7 @@ DEBIT_WORDS = (
     "withdrawal", "debit", "purchase", "payment", "fee", "charge", "check", "transfer to", "pos ", "atm",
 )
 
+# Guessing an unknown bank's name, website and account product from the header (for saving a bank).
 BANK_NAME_RE = re.compile(
     r"\b([A-Z][A-Za-z&.'\-]*(?:\s+[A-Z][A-Za-z&.'\-]*){0,4}\s+"
     r"(?:Bank|Bancorp|Credit Union|Savings Bank|Trust Company|Trust|Financial|Federal Credit Union|N\.A\.))\b"
@@ -128,6 +143,7 @@ PRODUCT_RE = re.compile(r"^([A-Z][A-Z &'\-]{2,40}\b(?:CHECKING|SAVINGS|MONEY MAR
 
 @dataclass
 class _Candidate:
+    """A line that looks like a transaction (or a balance or printed total), before its direction is decided."""
     page: int
     line_no: int
     date_raw: str
@@ -144,6 +160,7 @@ class _Candidate:
 
 @dataclass
 class AutoParseOutput:
+    """The rows read from a statement, plus how much of them the running balances confirmed."""
     rows: List[Dict]
     has_balance_column: bool
     balance_rows: int
@@ -173,6 +190,10 @@ DEBIT_MARK = -2
 
 
 def _parse_amount(match: re.Match) -> Tuple[float, int]:
+    """
+    (value, sign hint) from an AMOUNT_RE match: 1 for CR, -1 for a minus sign or parentheses, DEBIT_MARK
+    for DR, 0 for none.
+    """
     value = float(f"{match.group('num').replace(',', '')}.{match.group('cents')}")
     sign = 0
     suffix = (match.group("suffix") or "").strip().upper()
@@ -186,6 +207,7 @@ def _parse_amount(match: re.Match) -> Tuple[float, int]:
 
 
 def _strip_amounts_and_dates(text: str) -> str:
+    """A line's description: the text left after removing amounts and dates, with redactions shown as [redacted]."""
     text = AMOUNT_RE.sub(" ", text)
     text = DATE_RE.sub(" ", text)
     text = REDACTION_RE.sub(" [redacted] ", text)
@@ -265,6 +287,7 @@ def _section_for_header(line: str, is_card: bool = False) -> Optional[str]:
 
 
 def _infer_year(full_text: str) -> int:
+    """The year to use for dates printed without one: the most common year on the statement (this year if none)."""
     years = [int(y) for y in YEAR_RE.findall(full_text)]
     if not years:
         return datetime.now().year
@@ -272,6 +295,10 @@ def _infer_year(full_text: str) -> int:
 
 
 def _to_date(raw: str, base_year: int, wraps_year: bool) -> Optional[datetime]:
+    """
+    A date from '07/01', '7/1/19', '05-15-2003' or 'Jan 5'. `wraps_year` means the statement crosses New
+    Year, so November and December dates belong to the year before.
+    """
     raw = raw.strip()
     month_match = re.match(rf"({_MONTH_ALT})[a-z]*\.?\s+(\d{{1,2}})(?:,?\s+(\d{{4}}))?", raw, re.IGNORECASE)
     if month_match:
@@ -337,6 +364,13 @@ def suggest_detection_keywords(full_text: str, bank_name: Optional[str]) -> List
 
 
 def _collect_candidates(pages: List[str], is_card: bool = False) -> List[_Candidate]:
+    """
+    Walk every line of every page and collect transaction candidates.
+
+    Tracks the current account, statement period and section heading as it goes, joins descriptions that
+    wrap onto extra lines, reads grids of checks, and records opening balances and printed control
+    totals as special candidates (description "__balance__" or "__control__").
+    """
     candidates: List[_Candidate] = []
     section = "all"
     orphan_lines: List[str] = []  # Description text seen before its dated line (multi-line layouts).
@@ -348,6 +382,7 @@ def _collect_candidates(pages: List[str], is_card: bool = False) -> List[_Candid
     continued = 0  # follow-on description lines added to the last transaction
 
     def add(cand: _Candidate) -> None:
+        """Record a candidate with the account and statement period in effect at this point."""
         cand.period = period
         if account_number and sub_account:
             cand.account = f"{account_number} · {sub_account}"
@@ -578,6 +613,10 @@ def _drop_duplicate_checks(candidates: List[_Candidate]) -> List[_Candidate]:
 
 
 def _keyword_direction(description: str, credit_keywords: List[str], is_card: bool = False) -> Optional[str]:
+    """
+    Direction from words in the description, or None when they don't say. On a card, anything that isn't
+    a payment or credit is a charge.
+    """
     text = description.lower()
     if is_card:
         return "credit" if any(word in text for word in CARD_CREDIT_WORDS) else "debit"
@@ -597,7 +636,14 @@ def auto_parse(
     default_direction: str = "debit",
     credit_keywords: Optional[List[str]] = None,
 ) -> AutoParseOutput:
-    """Parse statement pages into transaction rows without a layout-specific parser."""
+    """
+    Parse statement pages into transaction rows without a layout-specific parser.
+
+    `bank_format`, `default_direction` and `credit_keywords` come from a saved bank, when one
+    matched. Each row has the columns statement_parser expects, plus "section" (the heading it
+    was listed under) and "balance_check" ("ok" when a printed balance confirmed it, "break"
+    when no reading of the amounts explains the printed balance).
+    """
     full_text = "\n".join(pages)
     bank_name = suggest_bank_name(full_text)
     credit_words = list(credit_keywords) if credit_keywords else list(CREDIT_WORDS)
@@ -625,11 +671,13 @@ def auto_parse(
     period_names = {period: _period_name(period) for period in periods}
 
     def statement_for(cand: _Candidate) -> str:
+        """The statement a line belongs to: the file name, plus the period when one PDF holds several months."""
         if len(periods) > 1 and cand.period:
             return f"{statement_id} · {period_names[cand.period]}"
         return statement_id
 
     def date_for(cand: _Candidate) -> Optional[datetime]:
+        """The line's date, taking undated years from its statement period."""
         end = _to_date(cand.period[1], base_year, False) if cand.period else None
         if end is None:
             return _to_date(cand.date_raw, base_year, wraps_year)
@@ -648,6 +696,7 @@ def auto_parse(
     waiting: Dict[Tuple, List[Tuple[Dict, bool]]] = {}
 
     def sign_direction(sign_hint: int) -> Optional[str]:
+        """Direction from a printed sign or CR/DR marker, or None when there isn't one."""
         if sign_hint == 1:
             return "credit"
         if sign_hint == DEBIT_MARK:

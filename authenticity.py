@@ -29,6 +29,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import pdfplumber
 
+# A check's result: looks normal, worth checking, a note (for example "this is a scan"), or not checked.
 OK, WARN, NOTE, SKIPPED = "ok", "warn", "note", "skipped"
 
 # Tools people use to edit or rebuild PDFs. Banks produce statements with document-composition
@@ -39,26 +40,34 @@ EDITING_TOOLS = re.compile(
     r"inkscape|illustrator|pdf\s*editor|pdf-xchange|able2extract|pdf2go|online2pdf|sodapdf|docfly|lightpdf",
     re.IGNORECASE,
 )
+# Printer drivers and scanners: a printed or scanned copy, not the bank's file (a note, not a warning).
 PRINT_TOOLS = re.compile(r"print\s*to\s*pdf|quartz pdfcontext|scan|epson|canon|hp\s|xerox|ricoh|fujitsu|naps2", re.IGNORECASE)
+# A date in a statement period: "April 01, 2025" or "04/01/2025".
 DATE_TOKEN = re.compile(r"[A-Z][a-z]+\.? \d{1,2},? \d{4}|\d{1,2}/\d{1,2}/\d{2,4}")
+# Amounts of $1,000 or more with and without a thousands comma.
 WITH_COMMA = re.compile(r"(?<![\d.])\$?\d{1,3}(?:,\d{3})+\.\d{2}(?!\d)")
 WITHOUT_COMMA = re.compile(r"(?<![\d,.])\$?\d{4,}\.\d{2}(?![\d])")
 # Only money-in wording on money out is checked: relabelling "payment to" as "payment from" hides where money
 # went, while banks word money-in lines too loosely ("transfer to savings" on the savings account) to check the reverse.
 MONEY_IN_WORDS = re.compile(r"\b(?:payment|transfer|credit|deposit)\s+from\b", re.IGNORECASE)
+# Lines that legitimately go against their wording (a reversed or returned payment).
 REVERSAL_WORDS = re.compile(r"reversal|revers|return|refund|correction|adjust|void|cancel", re.IGNORECASE)
+# The total deposits line in the statement's summary box.
 SUMMARY_DEPOSITS = re.compile(
     r"^(?:total\s+)?(?:deposits|additions|deposits\s+and\s+(?:other\s+)?(?:additions|credits))\b[^\d$\n]*\$?\s?([\d,]+\.\d{2})",
     re.IGNORECASE | re.MULTILINE,
 )
+# A statement period written out: "April 01, 2025 through April 30, 2025".
 PERIOD_TEXT = re.compile(
     r"(" + DATE_TOKEN.pattern + r")\s*(?:through|thru|to|-|–)\s*(" + DATE_TOKEN.pattern + r")", re.IGNORECASE
 )
+# A line that starts with a date and contains an amount: a transaction line.
 TXN_LINE = re.compile(r"^\s*\*?\d{1,2}[/-]\d{1,2}\b.*\d\.\d{2}")
 
 
 @dataclass
 class Check:
+    """The result of one document check, with up to eight example lines for the user to look at."""
     name: str
     status: str  # ok | warn | note | skipped
     detail: str
@@ -66,10 +75,12 @@ class Check:
 
 
 def _money(value: float) -> str:
+    """$1,234.56, or -$1,234.56 for a negative amount."""
     return f"-${-value:,.2f}" if value < 0 else f"${value:,.2f}"
 
 
 def _pdf_date(value) -> Optional[datetime]:
+    """A PDF date ('D:20250502100805+00'00'') as a datetime; None if it can't be read."""
     match = re.search(r"(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?", str(value or ""))
     if not match:
         return None
@@ -80,12 +91,17 @@ def _pdf_date(value) -> Optional[datetime]:
 
 
 def _line_label(row) -> str:
+    """A transaction as one readable line for the examples: date, description, signed amount and page."""
     when = row["txn_date"].strftime("%m/%d") if pd.notna(row["txn_date"]) else str(row.get("txn_date_raw") or "")
     amount = row["amount"] if pd.notna(row["amount"]) else 0.0
     return f"{when} {str(row['description'])[:60]} {_money(-amount if row['direction'] == 'debit' else amount)} (page {row['source_page']})"
 
 
 def _metadata_checks(pdf) -> List[Check]:
+    """
+    Two checks from the PDF's own details: which software made it, and whether it was saved again long
+    after it was created.
+    """
     meta = {k: str(v) for k, v in (pdf.metadata or {}).items()}
     tools = " / ".join(dict.fromkeys(v for k, v in meta.items() if k in ("Creator", "Producer") and v.strip()))
     checks: List[Check] = []
@@ -127,6 +143,7 @@ def _font_check(pdf) -> Check:
     lines: List[Tuple[int, str, frozenset]] = []
     for page_number, page in enumerate(pdf.pages, start=1):
         words = page.extract_words(extra_attrs=["fontname"], keep_blank_chars=False, use_text_flow=False)
+        # Group words into lines by their height on the page (within 3 points).
         rows: Dict[int, List[dict]] = {}
         for word in words:
             rows.setdefault(round(word["top"] / 3), []).append(word)
@@ -138,6 +155,8 @@ def _font_check(pdf) -> Check:
                 lines.append((page_number, text, fonts))
     if len(lines) < 5:
         return Check("Fonts on transaction lines", SKIPPED, "Too few transaction lines with font information to compare.")
+    # A font family used on fewer than 35% of the transaction lines is "rare". If those lines are a
+    # minority too, they were probably typed over the statement in an editor.
     usage = Counter(font for _, _, fonts in lines for font in fonts)
     rare = {font for font, count in usage.items() if count / len(lines) < 0.35}
     odd = [(page, text, fonts & rare) for page, text, fonts in lines if fonts & rare]
@@ -153,17 +172,23 @@ def _font_check(pdf) -> Check:
 
 
 def _date(token: str):
+    """A date token as a datetime, reading 31/01/2025-style dates day first."""
     day_first = bool(re.match(r"(1[3-9]|2\d|3[01])/", token))
     return pd.to_datetime(token.replace(".", ""), errors="coerce", dayfirst=day_first)
 
 
 def _period(text: str) -> Optional[Tuple[datetime, datetime]]:
+    """(start, end) from text holding two dates, or None."""
     found = [_date(t) for t in DATE_TOKEN.findall(str(text or ""))]
     found = [d for d in found if pd.notna(d)]
     return (found[0], found[-1]) if len(found) >= 2 and found[-1] > found[0] else None
 
 
 def _date_checks(tx: pd.DataFrame, full_text: str, is_card: bool) -> List[Check]:
+    """
+    Two checks: transactions dated outside their statement period, and transactions out of date order.
+    Skipped for day-first dates, which the reader doesn't fully support yet.
+    """
     if tx["txn_date_raw"].astype(str).str.match(r"\s*(?:1[3-9]|2\d|3[01])[/.-]\d").any():
         why = "Dates are written day first (31/01), which the reader doesn't fully support yet."
         return [Check("Dates inside the statement period", SKIPPED, why), Check("Transactions in date order", SKIPPED, why)]
@@ -221,6 +246,8 @@ def _out_of_order(ordered: pd.DataFrame) -> List[str]:
     day = pd.Timedelta(days=1)
     found: List[str] = []
     blamed = set()
+    # A step back of more than a day breaks the order. Blame the line that jumped ahead (later than the
+    # lines on both sides) or, otherwise, the one that fell back; one break isn't counted twice.
     for i in range(1, len(dates)):
         if dates[i] >= dates[i - 1] - day or i - 1 in blamed:
             continue
@@ -236,6 +263,10 @@ def _out_of_order(ordered: pd.DataFrame) -> List[str]:
 
 
 def _direction_check(tx: pd.DataFrame, is_card: bool) -> Check:
+    """
+    Lines that say money came in ("payment from") although the running balance went down: a relabelled
+    payment. Only lines confirmed by a printed balance are judged.
+    """
     if is_card:
         return Check("Descriptions match money in and out", SKIPPED, "Not checked on credit card statements.")
     checked = tx[tx["balance_check"] == "ok"]
@@ -255,6 +286,10 @@ def _direction_check(tx: pd.DataFrame, is_card: bool) -> Check:
 
 
 def _balance_check(tx: pd.DataFrame, scanned: bool) -> Check:
+    """
+    Printed running balances that no reading of the amounts explains. A warning on a text PDF; only a
+    note on a scan, where a misread digit is possible.
+    """
     tested = tx[tx["balance_check"].isin(["ok", "break"])]
     if tested.empty:
         return Check("Running balances add up", SKIPPED, "The statement has no running balance column.")
@@ -272,6 +307,10 @@ def _balance_check(tx: pd.DataFrame, scanned: bool) -> Check:
 
 
 def _summary_check(tx: pd.DataFrame, full_text: str, is_card: bool) -> Check:
+    """
+    The statement's summary against its transactions: total deposits, and opening balance plus
+    transactions against the printed ending balance.
+    """
     name = "Summary agrees with the transactions"
     if tx["statement_id"].nunique() != 1 or tx["account_number"].fillna("").nunique() != 1:
         return Check(name, SKIPPED, "Checked only on single-account, single-month statements (the Bank Reconciliation tab covers the rest).")
@@ -282,6 +321,7 @@ def _summary_check(tx: pd.DataFrame, full_text: str, is_card: bool) -> Check:
     problems: List[str] = []
     compared = 0
     header = full_text.split("\n")
+    # The summary box is above the first transaction line.
     header_text = "\n".join(header[: next((i for i, ln in enumerate(header) if TXN_LINE.match(ln)), len(header))])
     if not is_card:
         match = SUMMARY_DEPOSITS.search(header_text)
@@ -295,6 +335,7 @@ def _summary_check(tx: pd.DataFrame, full_text: str, is_card: bool) -> Check:
     # The same figure for both usually means the summary wasn't read, not that it is wrong.
     if pd.notna(opening) and pd.notna(closing) and opening != closing:
         compared += 1
+        # A card balance rises with charges; a bank balance rises with deposits.
         expected = opening + debits - credits if is_card else opening + credits - debits
         if abs(expected - closing) > 0.01:
             problems.append(f"Opening balance {_money(opening)} plus the transactions comes to {_money(expected)}, but the ending "
@@ -307,6 +348,7 @@ def _summary_check(tx: pd.DataFrame, full_text: str, is_card: bool) -> Check:
 
 
 def _format_check(full_text: str, scanned: bool) -> Check:
+    """Amounts of $1,000 or more printed without a thousands comma where the rest of the statement uses one."""
     with_comma = WITH_COMMA.findall(full_text)
     without = WITHOUT_COMMA.findall(full_text)
     if len(with_comma) >= 3 and without and len(without) < len(with_comma):

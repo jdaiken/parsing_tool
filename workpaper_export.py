@@ -1,3 +1,12 @@
+"""
+The forensic workpaper (Excel): everything an investigator needs in the case file.
+
+Sheets, in order: Summary (totals plus run details such as the app version, analyst and time
+zone), Evidence (each statement's SHA-256 fingerprint and results), Case_Notes and Case_Log
+(when a project is open), Transactions (every row with its source file, page and line),
+Risk_Summary, Flags_For_Review, Document_Checks and, optionally, Raw_Text.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -13,6 +22,7 @@ HEADER_FONT = Font(color="FFFFFF", bold=True)
 
 
 def _style_sheet(ws) -> None:
+    """Freeze the header row, style it, and size each column to its longest value (within limits)."""
     ws.freeze_panes = "A2"
     for cell in ws[1]:
         cell.fill = HEADER_FILL
@@ -26,6 +36,7 @@ def _style_sheet(ws) -> None:
 
 
 def _format_currency_columns(ws, headers: list[str]) -> None:
+    """Show money columns (amount, debit, credit, running balance) as $#,##0.00."""
     currency_cols = {"amount", "debit", "credit", "running_balance"}
     for idx, header in enumerate(headers, start=1):
         if header in currency_cols:
@@ -45,6 +56,14 @@ def build_workpaper(
     run_details: list[tuple[str, object]] | None = None,
     case_log: pd.DataFrame | None = None,
 ) -> bytes:
+    """
+    The forensic workpaper as .xlsx bytes.
+
+    Optional parts are added only when given: `document_checks` (authenticity results), `case_notes`
+    and `case_log` (the open project), `evidence` (one row per statement file with its fingerprint)
+    and `run_details` ((label, value) pairs added to the Summary sheet). An empty `raw_text` leaves
+    out the Raw_Text sheet.
+    """
     output = BytesIO()
     risk_counts = (
         transactions["risk_level"].value_counts().to_dict()

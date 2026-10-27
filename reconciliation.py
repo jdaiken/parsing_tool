@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+# Columns of the reconciliation table: one row per statement and account.
 RECON_COLUMNS = [
     "statement_id",
     "account_number",
@@ -27,6 +28,7 @@ RECON_COLUMNS = [
 
 
 def _first_number(frame: pd.DataFrame, column: str):
+    """The first numeric value in a column, or None (statement-level figures repeat on every row)."""
     values = pd.to_numeric(frame.get(column, pd.Series(dtype=float)), errors="coerce").dropna()
     return float(values.iloc[0]) if not values.empty else None
 
