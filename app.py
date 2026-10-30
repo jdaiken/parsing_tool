@@ -58,6 +58,7 @@ ORG_URL = "https://www.justiceforfraudvictimsproject.org/"
 PAGE_BG = "#F4F5F7"  # light gray page behind the white cards
 BLUE_TINT = "#E8EFF6"  # pale blue for icons, highlights and the sidebar
 BLUE_LINE = "#C5D4E3"  # blue-gray borders
+INPUT_LINE = "#7C8DA6"  # input outlines: dark enough (3:1) to see the box on white or gray
 RISK_COLORS = {"High": "#B42318", "Medium": "#D97706", "Low": "#15803D"}
 
 APP_DIR = Path(__file__).resolve().parent
@@ -77,17 +78,45 @@ USER_HEADER = os.environ.get("BSA_USER_HEADER", "").strip()
 APP_FILE_PATTERNS = [
     "*.py", "*.pdf", "*.md", "LICENSE", "NOTICE", "requirements.txt", "requirements-lock.txt", "index.html", ".gitignore", ".nojekyll",
     ".dockerignore", "start.bat", "start.sh", ".streamlit/config.toml", ".vscode/*.json", ".github/*.yml",
-    ".github/workflows/*.yml", "assets/*", "assets/fonts/*", "demo/*", "docs/*.md", "docs/*.pdf", "docs/guides/*", "docs/guides/img/*", "deploy/*/*", "tools/*.py", "tests/*.py",
+    ".github/workflows/*.yml", "assets/*", "assets/fonts/*", "demo/*", "demo/case_documents/*", "docs/*.md", "docs/*.pdf", "docs/guides/*", "docs/guides/img/*", "docs/templates/*", "deploy/*/*", "tools/*.py", "tests/*.py",
 ]
 # The printable guides in docs/ (built from docs/guides by tools/build_guides.py): button label -> file.
 GUIDES = {
     "User Guide": "docs/Bank_Statement_Analyzer_User_Guide.pdf",
     "Implementation Guide": "docs/Bank_Statement_Analyzer_Implementation_Guide.pdf",
 }
-# The fictional demo case in demo/ (see demo/ANSWER_KEY.md): three months of checking and a credit card,
-# and separately a doctored "family copy" of April next to the genuine April statement.
+# Materials for students working the practice case: the method, the workpapers, and the case itself.
+QUICK_GUIDE = "docs/Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf"
+WORKPAPER_TEMPLATE = "docs/templates/Forensic_Workpaper_Template.xlsx"
+# The case pack: every statement and case document, without the answer key.
+CASE_PACK_PATTERNS = ["demo/[0-9]*.pdf", "demo/case_documents/*.pdf", QUICK_GUIDE, WORKPAPER_TEMPLATE]
+CASE_PACK_README = """The Hartwell case: practice materials (fictional)
+
+Everything in this pack is invented for training: the banks, the people, the account numbers and every
+transaction. Every page is marked as a sample.
+
+statements/   Eleven statements from four banks:
+              1-4   Evelyn Hartwell's checking (Mar-May 2025) and credit card (May), Larkspur Valley Bank
+              5     The "family copy" of April the caregiver gave the family
+              6     A scanned, redacted copy of May (read it with the version that runs on your computer)
+              7-8   DP Companion Care LLC business checking, Quillbrook Credit Union (subpoenaed)
+              9-10  Dana Pruitt personal checking, Oxbow Prairie National Bank (subpoenaed)
+              11    The "proof of repayment" sent by Dana Pruitt's attorney
+case_documents/  Exhibits A to I. Start with Exhibit A, the engagement letter: it lists the questions to answer.
+Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf   The method, step by step.
+Forensic_Workpaper_Template.xlsx                   The workpapers to fill in.
+
+Load the statements into the Bank Statement Analyzer (or click "Try the full case" in the app).
+"""
+
+# The fictional demo case in demo/ (see demo/ANSWER_KEY.md): three months of checking and a credit card; the
+# full case adds the caregiver's business and personal accounts at two other banks; a doctored "family copy" of
+# April next to the genuine April; and an AI-generated "proof of repayment" next to the genuine May.
 SAMPLE_CASE = ["demo/1_checking_2025-03.pdf", "demo/2_checking_2025-04.pdf", "demo/3_checking_2025-05.pdf", "demo/4_credit_card_2025-05.pdf"]
+SAMPLE_FULL = SAMPLE_CASE + ["demo/7_dp_companion_care_2025-04.pdf", "demo/8_dp_companion_care_2025-05.pdf",
+                             "demo/9_pruitt_personal_2025-04.pdf", "demo/10_pruitt_personal_2025-05.pdf"]
 SAMPLE_DOCTORED = ["demo/2_checking_2025-04.pdf", "demo/5_checking_2025-04_family_copy.pdf"]
+SAMPLE_AI = ["demo/3_checking_2025-05.pdf", "demo/11_wrenfield_repayment_proof_2025-05.pdf"]
 
 st.set_page_config(page_title=APP_NAME, page_icon=":material/account_balance:", layout="wide")
 
@@ -139,10 +168,30 @@ st.markdown(
         font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;}}
     .stApp {{background: {PAGE_BG};}}
     .stApp a {{color: {BLUE};}}
-    /* Inputs stay white so they stand out on the gray page. */
-    .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"], .stApp [data-baseweb="select"] > div,
-    .stApp [data-testid="stNumberInputContainer"], .stApp [data-baseweb="input"] input, .stApp textarea {{background: #FFFFFF;}}
-    .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"], .stApp [data-baseweb="select"] > div {{border-color: {BLUE_LINE};}}
+    /* Inputs: white with a clear outline (3:1 contrast on white and on the gray page), a blue edge on hover and a
+       blue ring while typing, so search boxes, drop-downs and number boxes are easy to find. Newer Streamlit marks the
+       boxes with data-testid / role="group"; older versions (the in-browser build) with data-baseweb. */
+    .stApp [data-testid="stTextInputRootElement"], .stApp [data-testid="stTextAreaRootElement"],
+    .stApp [data-testid="stNumberInputContainer"], .stApp [data-testid="stDateInputField"],
+    .stApp [data-testid="stSelectbox"] [role="group"], .stApp [data-testid="stMultiSelect"] [role="group"],
+    .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"], .stApp [data-baseweb="select"] > div {{
+        background: #FFFFFF !important; border: 1px solid {INPUT_LINE} !important; border-radius: 8px;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;}}
+    .stApp [data-baseweb="input"] input, .stApp textarea, .stApp [data-testid="stDateInputField"] input {{background: #FFFFFF;}}
+    .stApp [data-testid="stTextInputRootElement"]:hover, .stApp [data-testid="stTextAreaRootElement"]:hover,
+    .stApp [data-testid="stNumberInputContainer"]:hover, .stApp [data-testid="stDateInputField"]:hover,
+    .stApp [data-testid="stSelectbox"] [role="group"]:hover, .stApp [data-testid="stMultiSelect"] [role="group"]:hover,
+    .stApp [data-baseweb="input"]:hover, .stApp [data-baseweb="textarea"]:hover, .stApp [data-baseweb="select"] > div:hover {{
+        border-color: {BLUE} !important;}}
+    .stApp [data-testid="stTextInputRootElement"]:focus-within, .stApp [data-testid="stTextAreaRootElement"]:focus-within,
+    .stApp [data-testid="stNumberInputContainer"]:focus-within, .stApp [data-testid="stDateInputField"]:focus-within,
+    .stApp [data-testid="stSelectbox"] [role="group"]:focus-within, .stApp [data-testid="stMultiSelect"] [role="group"]:focus-within,
+    .stApp [data-baseweb="input"]:focus-within, .stApp [data-baseweb="textarea"]:focus-within,
+    .stApp [data-baseweb="select"] > div:focus-within {{
+        border-color: {BLUE} !important; box-shadow: 0 0 0 3px rgba(36, 96, 148, 0.22);}}
+    .stApp input::placeholder, .stApp textarea::placeholder {{color: #6B7280; opacity: 1;}}
+    .stApp [data-testid="stWidgetLabel"] p, .stApp [data-testid="stWidgetLabel"] label {{font-weight: 600; color: {NAVY};}}
+    .stApp [data-testid="stCheckbox"] label span:first-child {{border-color: {INPUT_LINE};}}
     .stApp [data-testid="stIconMaterial"] {{font-family: 'Material Symbols Rounded' !important;}}
     /* Hide Streamlit's menu and decoration, but not the toolbar itself: it holds the button that reopens the sidebar. */
     #MainMenu, [data-testid="stToolbarActions"], [data-testid="stDecoration"], footer {{visibility: hidden; height: 0;}}
@@ -481,6 +530,43 @@ def _app_files() -> tuple:
     return tuple(sorted((p.relative_to(APP_DIR).as_posix(), p.stat().st_mtime) for p in found))
 
 
+def _case_pack_files() -> List[Path]:
+    """The files in the student case pack that ship with this copy of the app."""
+    return sorted({p for pattern in CASE_PACK_PATTERNS for p in APP_DIR.glob(pattern) if p.is_file()})
+
+
+@st.cache_data(show_spinner=False)
+def _case_pack_zip(stamp: tuple) -> bytes:
+    """The Hartwell case pack as a .zip: statements, case documents, the guide and the template, with a README."""
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("Hartwell_case_pack/README.txt", CASE_PACK_README)
+        for path, _ in stamp:
+            folder = "statements/" if path.startswith("demo/") and "/case_documents/" not in path else "case_documents/" if "case_documents" in path else ""
+            zf.write(APP_DIR / path, f"Hartwell_case_pack/{folder}{Path(path).name}")
+    return buffer.getvalue()
+
+
+def _student_materials(containers, key_prefix: str) -> None:
+    """
+    Download buttons for the Quick Analysis Guide, the workpaper template and the case pack, one per
+    container (the sidebar three times, or three columns). Files missing from this copy are skipped.
+    """
+    guide, template = APP_DIR / QUICK_GUIDE, APP_DIR / WORKPAPER_TEMPLATE
+    pack = _case_pack_files()
+    buttons = []
+    if guide.exists():
+        buttons.append(("Quick Analysis Guide (PDF)", lambda: guide.read_bytes(), guide.name, "application/pdf", ":material/checklist:"))
+    if template.exists():
+        buttons.append(("Workpaper template (.xlsx)", lambda: template.read_bytes(), template.name,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ":material/table_view:"))
+    if any("case_documents" in p.as_posix() for p in pack):
+        stamp = tuple((p.relative_to(APP_DIR).as_posix(), p.stat().st_mtime) for p in pack)
+        buttons.append(("Hartwell case pack (.zip)", lambda: _case_pack_zip(stamp), "Hartwell_case_pack.zip", "application/zip", ":material/folder_zip:"))
+    for container, (label, data, name, mime, icon) in zip(containers, buttons):
+        container.download_button(label, data=data(), file_name=name, mime=mime, icon=icon, width="stretch", key=f"{key_prefix}_{name}")
+
+
 def _guide_buttons(containers, key_prefix: str) -> None:
     """
     A download button for each guide that ships with this copy of the app (PDFs, so they open
@@ -575,6 +661,8 @@ with st.sidebar:
     )
     st.markdown("#### Guides")
     _guide_buttons([st, st], "sidebar_guide")
+    st.markdown("#### Student materials")
+    _student_materials([st, st, st], "sidebar_student")
 
     st.markdown("#### Settings")
     # Settings apply to every statement read in this session.
@@ -658,13 +746,21 @@ if current_project:
     uploads = []
 if uploads:
     st.session_state["use_samples"] = None
-SAMPLE_SETS = {"case": SAMPLE_CASE, "doctored": SAMPLE_DOCTORED}
-sample_col, doctored_col, clear_col, _ = st.columns([1.6, 1.6, 1, 1.4])
-if not uploads and not current_project and all((APP_DIR / name).exists() for name in SAMPLE_CASE + SAMPLE_DOCTORED):
+SAMPLE_SETS = {"case": SAMPLE_CASE, "full": SAMPLE_FULL, "doctored": SAMPLE_DOCTORED, "ai": SAMPLE_AI}
+# Two rows so every label fits: the case itself, then the two questioned statements.
+sample_col, full_col, _ = st.columns([1.3, 1.1, 1.6])
+doctored_col, ai_col, clear_col = st.columns([1.3, 1.6, 1.1])
+if not uploads and not current_project and all((APP_DIR / name).exists() for names in SAMPLE_SETS.values() for name in names):
     if sample_col.button("Try it with sample statements", icon=":material/description:", help="A fictional elder-fraud case: 3 months of checking and a credit card"):
         st.session_state["use_samples"] = "case"
+    if full_col.button("Try the full case", icon=":material/account_balance:",
+                       help="The same case with the caregiver's business and personal accounts at two other banks, for tracing the money"):
+        st.session_state["use_samples"] = "full"
     if doctored_col.button("Try a doctored statement", icon=":material/policy:", help="A genuine statement next to an edited copy of it"):
         st.session_state["use_samples"] = "doctored"
+    if ai_col.button("Try an AI-generated statement", icon=":material/smart_toy:",
+                     help="A statement written by an AI tool as 'proof of repayment', next to the genuine statement it contradicts"):
+        st.session_state["use_samples"] = "ai"
     if st.session_state.get("use_samples") and clear_col.button("Clear samples"):
         st.session_state["use_samples"] = None
         st.rerun()
@@ -986,6 +1082,8 @@ with overview_tab:
         _section("Guides", "How to use the analyzer, and how a university or organization can host it")
         guide_left, guide_right, _ = st.columns([1, 1, 1.6])
         _guide_buttons([guide_left, guide_right], "welcome_guide")
+        _section("Student materials", "Practice the method on a complete fictional case: four banks, eleven statements, nine case documents")
+        _student_materials(st.columns(3), "welcome_student")
     else:
         # Summary KPI cards: volume, risk, and cash flow totals.
         _kpis(
@@ -1059,7 +1157,7 @@ with dashboard_tab:
             direction = g1.segmented_control("Direction", ["All", "Money in", "Money out"], default="All")
             chosen_risk = g2.multiselect("Risk", ["High", "Medium", "Low"], placeholder="All")
             granularity = g3.segmented_control("Group by", ["Daily", "Weekly", "Monthly"], default="Weekly") or "Weekly"
-            search = g4.text_input("Search descriptions", placeholder="casino, ATM, Zelle…")
+            search = g4.text_input("Search descriptions", placeholder="casino, ATM, Zelle…", icon=":material/search:")
 
         view = dash
         if len(date_range) == 2:
@@ -1132,7 +1230,7 @@ with transactions_tab:
         statement_options = sorted(all_transactions["statement_id"].dropna().unique().tolist())
         selected_statements = f1.multiselect("Statement", statement_options, default=statement_options)
         selected_risks = f2.multiselect("Risk level", ["high", "medium", "low"], default=["high", "medium", "low"], format_func=str.title)
-        search_term = f3.text_input("Search descriptions", placeholder="ATM, check, deposit…")
+        search_term = f3.text_input("Search descriptions", placeholder="ATM, check, deposit…", icon=":material/search:")
         filtered = all_transactions.copy()
         if selected_statements:
             filtered = filtered[filtered["statement_id"].isin(selected_statements)]
@@ -1247,9 +1345,10 @@ with document_tab:
     else:
         st.markdown(
             '<p class="doc-intro">Edited statements tend to leave the same traces: the file was re-saved by a PDF editor, '
-            "a few lines are in a different font, balances don't add up, dates are out of place. Each file is checked for them "
-            "below. A warning is a reason to get the statement <b>directly from the bank</b>; a clean result doesn't prove a "
-            "statement is genuine.</p>",
+            "a few lines are in a different font, balances don't add up, dates are out of place. Statements written from scratch "
+            "by an AI tool leave others: a PDF made by a programming library, leftover chatbot text, dates that don't exist, a "
+            "routing number that fails its check digit. Each file is checked for both below. A warning is a reason to get the "
+            "statement <b>directly from the bank</b>; a clean result doesn't prove a statement is genuine.</p>",
             unsafe_allow_html=True,
         )
         icons = {"ok": ("ok", "Looks normal"), "warn": ("bad", "Worth checking"), "note": ("warn", "Note"), "skipped": ("muted", "Not checked")}

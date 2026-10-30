@@ -15,7 +15,7 @@
     <p class="subtitle">Turn bank statement PDFs into forensic accounting workpapers in minutes.</p>
     <div class="meta">
       For students, instructors and fraud investigators<br>
-      Version 1.1 · 2026
+      Version 1.2 · 2026
     </div>
   </div>
   <div class="cover-foot"><span>Justice for Fraud Victims Project</span><span>justiceforfraudvictimsproject.org</span></div>
@@ -117,6 +117,7 @@
 
 <h3>Document Check</h3>
 <p>Each file is checked for the traces an edited statement usually leaves: a PDF editing tool, a file re-saved long after it was created, a few lines in a different font, dates outside the statement period or out of order, a "payment from" that actually took money out, balances that don't add up, summary totals that don't match, and figures formatted differently from the rest.</p>
+<p>It also looks for the traces of a statement <b>written from scratch by an AI tool</b>: a PDF made by a programming library, leftover chatbot text (markdown symbols, placeholders like [Bank Name]), dates that don't exist such as 06/31, a routing number that fails its check digit, page numbers that don't match the file, and an account number that changes. Two or more of those and the file is reported as <b>"may be AI-generated or fabricated"</b>.</p>
 <figure class="tall"><img src="img/doccheck.png" alt="Document Check results for a doctored statement"><figcaption>The demo's doctored "family copy": nine signs of editing, each with the lines involved.</figcaption></figure>
 <div class="callout"><span class="label">What a result means</span>
 <p>A warning is a reason to get the statement directly from the bank. A clean result does not prove a statement is genuine. Scanned copies allow fewer checks, and the analyzer says so.</p></div>
@@ -200,13 +201,16 @@
 
 <h2 class="chapter">8. Teaching with the demo case</h2>
 <p class="lead">The demo case is entirely fictional: a made-up bank, customer and caregiver, with every page marked as a sample. It is safe to use anywhere.</p>
-<p><b>The story:</b> Evelyn Hartwell, a retired widow, hires a caregiver in April. Over two months her account goes from about $16,000, plus a $50,000 certificate of deposit, to overdrawn. The caregiver shows the family a doctored copy of April that looks fine.</p>
+<p><b>The story:</b> Evelyn Hartwell, a retired widow, hires a caregiver in April. Over two months her account goes from about $16,000, plus a $50,000 certificate of deposit, to overdrawn. The caregiver shows the family a doctored copy of April that looks fine, and later her attorney sends an AI-generated statement as "proof" the money was repaid.</p>
+<p>The <b>full case</b> adds the caregiver's business account at Quillbrook Credit Union and her personal account at Oxbow Prairie National Bank, so students can trace the money, plus nine case documents (an engagement letter, interview notes, the caregiver agreement, bank notices, check images and more). Download it all with <span class="ui">Hartwell case pack (.zip)</span> under <span class="ui">Student materials</span>, together with the <b>Quick Analysis Guide</b> and the <b>workpaper template</b>.</p>
 <table>
   <tr><th style="width:36%">Exercise</th><th>What students should find</th></tr>
   <tr><td>Load the sample statements and compare March with April and May on the Dashboard</td><td>A normal March, a $50,000 deposit in April, then the balance draining to below zero by the end of May</td></tr>
   <tr><td>Review Fraud patterns found on the Red Flags tab</td><td>New payees (the caregiver's company and the caregiver), cash kept under $10,000, casino activity, gift cards, a duplicate payment, overdrafts</td></tr>
   <tr><td>Search the Transactions tab for "Lucky Star" and "Pruitt"</td><td>The casino withdrawals, and the Zelle payments to the caregiver</td></tr>
   <tr><td>Click Try a doctored statement and open the Document Check tab</td><td>Nine signs the family copy was edited, and its failed reconciliation</td></tr>
+  <tr><td>Click Try an AI-generated statement and open the Document Check tab</td><td>Four signs the "proof of repayment" was written by an AI tool; and Evelyn's real May statement shows none of the repayments it claims</td></tr>
+  <tr><td>Click Try the full case and open the Red Flags tab</td><td>Cash deposited just under $10,000 in the caregiver's account days after each withdrawal, and the $24,000 wire passing straight through her company's account</td></tr>
   <tr><td>Download the workpaper and open the Evidence sheet</td><td>Each statement's fingerprint, and the source page and line of every transaction</td></tr>
 </table>
 <p>The full answer key is in <b>demo/ANSWER_KEY.md</b>. To show OCR, drag <b>demo/6_checking_2025-05_scanned_redacted.pdf</b> into the computer version.</p>

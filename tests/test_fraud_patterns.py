@@ -52,3 +52,15 @@ def test_march_alone_raises_no_high_findings(parse):
     """The normal month on its own raises nothing serious (no false alarms)."""
     findings = fraud_rules.find(parse("1_checking_2025-03.pdf").transactions)
     assert not [f for f in findings if f.severity == "high"]
+
+
+def test_full_case_patterns_across_banks(parse):
+    """With the caregiver's accounts added, the receiving side's patterns are found too."""
+    names = CASE + ["7_dp_companion_care_2025-04.pdf", "8_dp_companion_care_2025-05.pdf",
+                    "9_pruitt_personal_2025-04.pdf", "10_pruitt_personal_2025-05.pdf"]
+    tx = pd.concat([parse(name).transactions for name in names], ignore_index=True)
+    _, findings, _ = fraud_rules.apply(tx)
+    by_title = {f.title: f for f in findings}
+    assert "Cash deposits kept just under $10,000" in by_title
+    assert "Money in and straight back out" in by_title
+    assert "$24,000.00" in by_title["Money in and straight back out"].detail

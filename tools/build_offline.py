@@ -95,8 +95,14 @@ APP_FILES = [
     "demo/1_checking_2025-03.pdf", "demo/2_checking_2025-04.pdf", "demo/3_checking_2025-05.pdf",
     "demo/4_credit_card_2025-05.pdf", "demo/5_checking_2025-04_family_copy.pdf",
     "demo/6_checking_2025-05_scanned_redacted.pdf", "demo/ANSWER_KEY.md", "demo/make_demo_case.py",
+    "demo/7_dp_companion_care_2025-04.pdf", "demo/8_dp_companion_care_2025-05.pdf", "demo/9_pruitt_personal_2025-04.pdf",
+    "demo/10_pruitt_personal_2025-05.pdf", "demo/11_wrenfield_repayment_proof_2025-05.pdf", "demo/make_case_pack.py",
     "LICENSE", "NOTICE", "requirements.txt", "requirements-lock.txt", "README.md", "SECURITY.md", "docs/SECURITY_AND_DATA_HANDLING.md", "docs/UNIVERSITY_DEPLOYMENT.md",
     "docs/Bank_Statement_Analyzer_User_Guide.pdf", "docs/Bank_Statement_Analyzer_Implementation_Guide.pdf",
+    "docs/Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf", "docs/templates/Forensic_Workpaper_Template.xlsx",
+    "demo/case_documents/Exhibit_A_Engagement_letter.pdf", "demo/case_documents/Exhibit_B_Family_interview_notes.pdf", "demo/case_documents/Exhibit_C_Caregiver_services_agreement.pdf",
+    "demo/case_documents/Exhibit_D_DP_Companion_Care_invoice.pdf", "demo/case_documents/Exhibit_E_CD_maturity_notice.pdf", "demo/case_documents/Exhibit_F_Account_change_confirmation.pdf",
+    "demo/case_documents/Exhibit_G_Wire_transfer_confirmation.pdf", "demo/case_documents/Exhibit_H_Check_images.pdf", "demo/case_documents/Exhibit_I_Opposing_counsel_letter.pdf",
     "start.bat", "start.sh", ".streamlit/config.toml",
 ]
 

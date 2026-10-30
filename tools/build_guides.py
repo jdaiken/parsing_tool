@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GUIDES = {
     "user_guide.html": ("User Guide", ROOT / "docs" / "Bank_Statement_Analyzer_User_Guide.pdf"),
     "implementation_guide.html": ("Implementation Guide", ROOT / "docs" / "Bank_Statement_Analyzer_Implementation_Guide.pdf"),
+    "quick_analysis_guide.html": ("Quick Analysis Guide", ROOT / "docs" / "Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf"),
 }
 
 # The cover is rendered on its own without the page footer, then put in front of the other pages.

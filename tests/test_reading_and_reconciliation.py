@@ -9,6 +9,11 @@ GENUINE = {
     "2_checking_2025-04.pdf": (22, "running_balance"),
     "3_checking_2025-05.pdf": (21, "running_balance"),
     "4_credit_card_2025-05.pdf": (11, "summary_balance"),
+    # The caregiver's accounts at two other banks: two amount columns, and sections with totals.
+    "7_dp_companion_care_2025-04.pdf": (11, "running_balance"),
+    "8_dp_companion_care_2025-05.pdf": (6, "running_balance"),
+    "9_pruitt_personal_2025-04.pdf": (16, "control_totals"),
+    "10_pruitt_personal_2025-05.pdf": (13, "control_totals"),
 }
 
 

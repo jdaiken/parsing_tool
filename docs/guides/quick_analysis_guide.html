@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bank Statement Analyzer: Quick Analysis Guide</title>
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+
+<section class="cover">
+  <div class="cover-top"><img src="../../assets/logo.png" alt="Justice for Fraud Victims Project"></div>
+  <div class="cover-band">
+    <p class="kicker">Quick Analysis Guide</p>
+    <h1>Bank Statement Analyzer</h1>
+    <p class="subtitle">A step-by-step method for analyzing bank statements in a fraud case, with a practice case and workpapers.</p>
+    <div class="meta">
+      For accounting and fraud examination students<br>
+      Version 1.2 · 2026
+    </div>
+  </div>
+  <div class="cover-foot"><span>Justice for Fraud Victims Project</span><span>justiceforfraudvictimsproject.org</span></div>
+</section>
+
+<section class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>The method at a glance <span>3</span></li>
+    <li>Organize and fingerprint the documents <span>4</span></li>
+    <li>Prove every statement <span>5</span></li>
+    <li>Check that each document is genuine <span>6</span></li>
+    <li>See where the money went <span>8</span></li>
+    <li>Follow up the red flags <span>9</span></li>
+    <li>Trace the money across banks <span>10</span></li>
+    <li>Quantify and report <span>11</span></li>
+    <li>Practice: the Hartwell case <span>12</span></li>
+    <li>One-page checklist <span>13</span></li>
+  </ol>
+</section>
+
+<h2>1. The method at a glance</h2>
+<p class="lead">The analyzer does the reading, the arithmetic and the first pass for red flags. The judgment is yours: deciding what matters, following it up, and saying only what the records support.</p>
+<p>Work through eight steps, in order. Each fills one or two sheets of the <b>workpaper template</b> (<i>Forensic_Workpaper_Template.xlsx</i>, linked in the app's sidebar under <span class="ui">Student materials</span>). The sheet references are in brackets.</p>
+
+<div class="grid">
+  <div class="card navy"><h4>1. Scope</h4><p>Write down the questions you were asked, and the limits of the work. [A-1]</p></div>
+  <div class="card navy"><h4>2. Organize and fingerprint</h4><p>List every document, where it came from, and each statement's SHA-256. [A-2]</p></div>
+  <div class="card"><h4>3. Prove every statement</h4><p>Load the statements; confirm each one reconciles before you rely on it. [B-1]</p></div>
+  <div class="card"><h4>4. Check authenticity</h4><p>Read the Document Check for each file: edited? AI-generated? [D-2]</p></div>
+  <div class="card"><h4>5. Sources and uses</h4><p>Summarize money in and out by month, so the unusual stands out. [B-2]</p></div>
+  <div class="card"><h4>6. Red flags</h4><p>Log every flag and follow each one up until it is explained or isn't. [D-1]</p></div>
+  <div class="card taupe"><h4>7. Trace the money</h4><p>Follow each significant payment, and the cash, to where it arrived. [C-1, C-2, C-3]</p></div>
+  <div class="card taupe"><h4>8. Quantify and report</h4><p>Build the amount from the workpapers; write findings the records support. [E-1, F-1, R-1]</p></div>
+</div>
+
+<div class="callout"><span class="label">Three rules for the whole analysis</span>
+<ul>
+  <li><b>Prove before you rely.</b> A number from a statement that doesn't reconcile, or a statement that may not be genuine, isn't evidence yet.</li>
+  <li><b>Flags are leads, not conclusions.</b> A payment to a caregiver can be wages. Find out.</li>
+  <li><b>Every number has a source.</b> Each figure in your findings points to a workpaper, and each workpaper to a document, page and line.</li>
+</ul></div>
+
+<h2 class="chapter">2. Organize and fingerprint the documents</h2>
+<p class="lead">Before any analysis, know exactly what you have, where it came from, and what you were asked. [A-1, A-2]</p>
+<ol class="steps">
+  <li><b>Write down the questions.</b> Copy each question from the engagement letter into A-1, in the client's words. Your findings will answer them one by one.</li>
+  <li><b>Index every document.</b> On A-2, give each a number and record what it is, who produced it, how you got it (from the bank, by subpoena, from the client, from the other side) and when.</li>
+  <li><b>Separate bank-produced records from copies.</b> A statement downloaded by the bank or produced under subpoena is stronger evidence than a copy someone handed over. Note which is which.</li>
+  <li><b>Fingerprint each statement.</b> Load the statements in the app, open <span class="ui">Download Workpapers</span>, and copy each file's <b>SHA-256</b> from the Evidence record into A-2. If anyone later questions which file you analyzed, the same file gives the same fingerprint.</li>
+  <li><b>Use a project for real cases.</b> In the sidebar, <span class="ui">New project</span> keeps the statements, your notes and a log of what was done together, encrypted with your password.</li>
+</ol>
+<figure><img src="img/downloads.png" alt="Download Workpapers tab with the Evidence record"><figcaption>The Evidence record: each file's SHA-256 fingerprint, size, pages and transaction count.</figcaption></figure>
+
+<h2 class="chapter">3. Prove every statement</h2>
+<p class="lead">Before you use a single number, show that the analyzer read each statement completely. [B-1]</p>
+<ol class="steps">
+  <li>Drag the statements onto <span class="ui">Upload statements</span>. Check the file list: every file should say <span class="ui">Read</span> with a transaction count.</li>
+  <li>Open <span class="ui">Bank Reconciliation</span>. Each account shows one of three results:
+    <table>
+      <tr><th style="width:22%">Result</th><th>What it means</th><th style="width:34%">What you do</th></tr>
+      <tr><td class="yes">Reconciled</td><td>The transactions read agree with the balances or totals the bank printed</td><td>Rely on the figures; record it on B-1</td></tr>
+      <tr><td class="no">Variance</td><td>They don't: a line was missed or misread, or the statement was altered</td><td>Compare the Transactions tab with the PDF line by line before going further</td></tr>
+      <tr><td>Needs Review</td><td>The statement doesn't print enough to check against</td><td>Prove it by hand on B-1</td></tr>
+    </table>
+  </li>
+  <li>Record each statement on B-1: beginning balance, deposits and withdrawals from the detail, and the ending balance the bank printed. The sheet computes the difference.</li>
+  <li>Look for <b>gaps in the months</b>. A missing statement is a missing month of activity: request it.</li>
+</ol>
+<figure class="short"><img src="img/reconciliation.png" alt="Bank Reconciliation tab"><figcaption>Each statement's beginning balance, money in and out, and the ending balance the bank printed.</figcaption></figure>
+
+<h2 class="chapter">4. Check that each document is genuine</h2>
+<p class="lead">Fraud cases attract fake documents. Statements are edited to hide transactions, and now they are also written from scratch by AI tools. The <span class="ui">Document Check</span> tab looks for the traces of both. [D-2]</p>
+
+<h3>Signs a statement was edited</h3>
+<table>
+  <tr><th style="width:38%">Check</th><th>What a warning means</th></tr>
+  <tr><td>Software that made the PDF</td><td>Saved by a PDF editor or office program. Banks don't produce statements with these.</td></tr>
+  <tr><td>Saved again after it was created</td><td>The file was changed days or weeks after the bank issued it.</td></tr>
+  <tr><td>Fonts on transaction lines</td><td>A few lines are in a different font: typed over the original.</td></tr>
+  <tr><td>Dates inside the period / in date order</td><td>A line pasted in from another month, or moved.</td></tr>
+  <tr><td>Descriptions match money in and out</td><td>"Payment <i>from</i>" on money that went out: a relabelled payment.</td></tr>
+  <tr><td>Running balances / summary agree</td><td>An amount, balance or total was changed without the others.</td></tr>
+  <tr><td>Amounts formatted consistently</td><td>A figure typed by hand ($13763.86 among $1,234.56s).</td></tr>
+</table>
+
+<h3>Signs a statement was written by an AI tool</h3>
+<p>Ask an AI chat tool for "a bank statement showing these payments" and it will write one. Such files leave different traces, and two or more make the app report <b>"may be AI-generated or fabricated"</b>.</p>
+<table>
+  <tr><th style="width:38%">Check</th><th>What a warning means</th></tr>
+  <tr><td>Software that made the PDF</td><td>A programming library (ReportLab, FPDF, wkhtmltopdf and others): what AI tools and scripts use to write PDFs.</td></tr>
+  <tr><td>Text left by an AI tool</td><td>Markdown symbols like <code>**Account Summary**</code>, placeholders like <code>[Bank Name]</code>, or chatbot wording.</td></tr>
+  <tr><td>Dates that exist</td><td>A date like 06/31 or February 30: a bank's system can't print one.</td></tr>
+  <tr><td>Routing number</td><td>The number fails the check digit that every real U.S. routing number passes.</td></tr>
+  <tr><td>Page numbers match the file</td><td>"Page 1 of 2" on a one-page file: pages missing, or made up.</td></tr>
+  <tr><td>Account number the same throughout</td><td>Different numbers in different places (a note: it can also be a linked account).</td></tr>
+</table>
+<figure class="tall"><img src="img/ai_doccheck.png" alt="Document Check reporting an AI-generated statement"><figcaption>The practice case's "proof of repayment": four signs of an AI-generated statement, plus a page count and running balances that don't add up.</figcaption></figure>
+
+<div class="callout important"><span class="label">Then check the content</span>
+<p>The strongest test isn't in the file at all. Do the transactions appear on the other side? A claimed transfer to the victim should appear as a deposit on the victim's own statement. A payroll deposit should appear on the employer's statement. Record these on D-2 under "By hand".</p></div>
+<div class="callout"><span class="label">What a result means</span>
+<p>A warning is a reason to get the statement <b>directly from the bank</b>, or by subpoena. A clean result does not prove a statement is genuine.</p></div>
+
+<h2 class="chapter">5. See where the money went</h2>
+<p class="lead">A sources and uses summary turns hundreds of transactions into one page a reader can follow. [B-2]</p>
+<ol class="steps">
+  <li>Open the <span class="ui">Dashboard</span>. Read the balance-over-time chart first: a steady account, then a spike and a slide, is the shape of many exploitation cases.</li>
+  <li>Use the filters: Direction <span class="ui">Money out</span>, Group by <span class="ui">Monthly</span>, and the search box to isolate a payee or a merchant.</li>
+  <li>On B-2, total each month's money in by source and money out by use. Make the uses tell the story: ordinary living expenses, payments to the subject or related parties, cash, gambling, gift cards, fees.</li>
+  <li>Compare the months. What changed, when, and what happened just before it (a new caregiver, a CD maturing, a change of phone number)?</li>
+  <li>The check row on B-2 must be zero. If it isn't, a transaction is missing or counted twice.</li>
+</ol>
+<figure class="short"><img src="img/dashboard.png" alt="Dashboard with cash flow and balance charts"><figcaption>The Dashboard: filters, totals, weekly cash flow and the balance over time.</figcaption></figure>
+
+<h2 class="chapter">6. Follow up the red flags</h2>
+<p class="lead">The <span class="ui">Red Flags</span> tab lists patterns investigators look for, most serious first. Each is a question to answer, not an answer. [D-1]</p>
+<table>
+  <tr><th style="width:34%">Pattern</th><th>Questions to ask</th></tr>
+  <tr><td>New payee taking large sums</td><td>Who is it? Is there an agreement, invoices, a reason the payments started when they did?</td></tr>
+  <tr><td>Cash kept just under $10,000</td><td>Who made the withdrawals? Where did the cash go? (Banks report cash over $10,000; staying under on purpose is called structuring.)</td></tr>
+  <tr><td>Money in and straight back out</td><td>Is the account a pass-through? Where did the money go next?</td></tr>
+  <tr><td>Balance drained; cash jumped</td><td>What changed at the start? Who had access?</td></tr>
+  <tr><td>Gambling, gift cards, cash advances</td><td>Does this match the account holder's habits and abilities (can they drive to the casino)?</td></tr>
+  <tr><td>Duplicate payments, check gaps, overdrafts</td><td>Were both payments authorized? Where are the missing checks?</td></tr>
+</table>
+<figure class="short"><img src="img/redflags.png" alt="Red Flags tab"><figcaption>Fraud patterns found, each with what was found and on which account.</figcaption></figure>
+<ol class="steps">
+  <li>Copy each flag into D-1 with its account, dates and amount.</li>
+  <li>Write what you did to follow each one up and the result, then close it as <b>explained</b> (with the support), <b>unexplained</b> or <b>referred</b>. Add the flags you find yourself.</li>
+</ol>
+
+<h2 class="chapter">7. Trace the money across banks</h2>
+<p class="lead">Tracing answers the question every client asks: where did the money go? It needs the receiving side's records, usually by subpoena. [C-1, C-2, C-3]</p>
+<h3>Load both sides together</h3>
+<p>Upload the victim's statements and the recipient's statements together. The analyzer reads each bank's layout, reconciles each account, and looks for patterns across all of them: the same cash showing up as deposits, money arriving and leaving within days.</p>
+<h3>Match each payment [C-1]</h3>
+<table>
+  <tr><th style="width:22%">Method</th><th>How to match it</th></tr>
+  <tr><td>Check</td><td>The check image: payee, endorsement on the back (which account it was deposited to), and the deposit on the recipient's statement one to three days earlier</td></tr>
+  <tr><td>Wire</td><td>The wire record: beneficiary, bank and account number, and the same amount arriving the same day</td></tr>
+  <tr><td>Zelle / transfers</td><td>The confirmation number or the sender's name, same day</td></tr>
+  <tr><td>Cash</td><td>Cash deposits in the subject's accounts a few days later, often a little less than withdrawn [C-3]</td></tr>
+</table>
+<h3>Paid versus supported [C-2]</h3>
+<p>For each payee, compare what was paid with what a document supports: an agreement's rate, invoices, receipts. The calculator on C-2 works out the most a caregiver could have earned under an hourly agreement.</p>
+<h3>Follow it one more step</h3>
+<p>Money that arrives in a business account and leaves within days for a personal account, a car dealer or a casino tells you what the business is for. Keep tracing until the money is spent or the records run out, and say where they ran out.</p>
+<div class="callout tip"><span class="label">Search across statements</span>
+<p>The <span class="ui">Transactions</span> tab's search box covers every statement loaded. Search a name ("Pruitt"), a reference number, or an amount.</p></div>
+
+<h2 class="chapter">8. Quantify and report</h2>
+<p class="lead">Build the amount from the workpapers, one component at a time, and say what each rests on. [E-1, F-1, R-1]</p>
+<ol class="steps">
+  <li><b>List the components on E-1:</b> unsupported payments to the subject, cash traced to the subject's deposits, unexplained items. Mark each with its basis and whether it is included.</li>
+  <li><b>Keep the bases separate.</b> "Traced to the subject" is stronger than "unexplained". The summary on E-1 shows the total both ways.</li>
+  <li><b>Answer each question on F-1</b>, with the amount and the workpapers behind it.</li>
+  <li><b>Write what the records show, not what you believe.</b> See the table below.</li>
+  <li><b>Clear the review notes</b> on R-1 before the file is final.</li>
+</ol>
+<table>
+  <tr><th style="width:50%">Write</th><th>Not</th></tr>
+  <tr><td>"The $24,000 wire was deposited to the LLC's account and $18,750 left the next day by check to a car dealer."</td><td>"Dana stole the money to buy a car."</td></tr>
+  <tr><td>"The statement is not consistent with the account holder's bank records, which show no such deposits."</td><td>"The statement is a forgery."</td></tr>
+  <tr><td>"The signatures on checks 2047 and 2048 differ from those on 2043 and 2044; a document examiner should compare them."</td><td>"The checks were forged."</td></tr>
+  <tr><td>"We could not trace $6,600 of ATM cash, cash advances and gift cards."</td><td>(Leaving it out)</td></tr>
+</table>
+<div class="callout"><span class="label">Leave intent to the court</span>
+<p>Findings say whether the records are <b>consistent</b> or <b>not consistent</b> with the explanations offered. Whether anyone intended fraud is for the trier of fact.</p></div>
+
+<h2 class="chapter">9. Practice: the Hartwell case</h2>
+<p class="lead">A complete fictional case: four banks, eleven statements and nine case documents, every page marked as a sample.</p>
+<p><b>The story:</b> Evelyn Hartwell, 81, hires a caregiver, Dana Pruitt, who bills through DP Companion Care LLC. In two months her account goes from about $16,000, plus a $50,000 CD, to overdrawn. Her daughter's lawyer engages you.</p>
+<table>
+  <tr><th style="width:16%">Files</th><th>What they are</th></tr>
+  <tr><td>1 to 4</td><td>Evelyn's checking (March to May) and credit card (May), Larkspur Valley Bank</td></tr>
+  <tr><td>5, 6</td><td>The "family copy" of April that Dana gave the family; a scanned, redacted May (for OCR)</td></tr>
+  <tr><td>7, 8</td><td>DP Companion Care LLC's business checking, Quillbrook Credit Union (subpoenaed)</td></tr>
+  <tr><td>9, 10</td><td>Dana Pruitt's personal checking, Oxbow Prairie National Bank (subpoenaed)</td></tr>
+  <tr><td>11</td><td>The Wrenfield Trust Bank statement Dana's attorney sent as proof of repayment</td></tr>
+  <tr><td>Exhibits A-I</td><td>Engagement letter, interview notes, caregiver agreement, invoice, CD notice, account change letter, wire confirmation, check images, opposing counsel's letter</td></tr>
+</table>
+<p>In the app, <span class="ui">Try the full case</span> loads files 1 to 4 and 7 to 10; <span class="ui">Try a doctored statement</span> and <span class="ui">Try an AI-generated statement</span> load files 5 and 11 next to the real ones. Download everything with <span class="ui">Hartwell case pack (.zip)</span> under <span class="ui">Student materials</span>.</p>
+<h3>Exercises</h3>
+<ol class="steps">
+  <li>Read Exhibit A. Put its five questions on A-1.</li>
+  <li>Index all twenty documents on A-2 with the statements' fingerprints. Which came from a bank, and which from someone with an interest in the outcome?</li>
+  <li>Prove every statement on B-1. Which one doesn't reconcile, and why?</li>
+  <li>Complete D-2 for files 5 and 11. Then test file 11's content: do its two "loan repayments" appear anywhere in Evelyn's records?</li>
+  <li>Build B-2 for Evelyn's checking. What happened on April 3, April 14 and April 15? (Exhibits E, F and G help.)</li>
+  <li>Trace the checks, the wire and the Zelle payments on C-1, and the cash on C-3. How much of the cash reappears, and where?</li>
+  <li>Compare the payments with Exhibits C and D [C-2]; answer the five questions [E-1, F-1].</li>
+</ol>
+
+<h2 class="chapter">10. One-page checklist</h2>
+<ul class="checklist">
+  <li>The client's questions are on A-1, in their words, with the limits of the work.</li>
+  <li>Every document is on A-2: source, how obtained, date, and each statement's SHA-256.</li>
+  <li>Every statement reconciles on B-1, or the variance is explained. No months are missing.</li>
+  <li>Every statement has a Document Check result on A-2 and D-2. Questioned documents were tested against the other side's records.</li>
+  <li>Any warning led to a request for the statement directly from the bank.</li>
+  <li>B-2 shows sources and uses by month, and its check row is zero.</li>
+  <li>Every red flag is on D-1 with its follow-up, and is explained, unexplained or referred.</li>
+  <li>Every significant payment is on C-1, traced or with the reason it couldn't be.</li>
+  <li>Cash withdrawals are on C-3, with any matching deposits.</li>
+  <li>Payments to each key payee are compared with what is supported on C-2.</li>
+  <li>The amount on E-1 is built from components, each with its basis and workpaper.</li>
+  <li>Each question has an answer on F-1 that the records support, written as consistent or not consistent.</li>
+  <li>What could not be determined, and the record that would settle it, is stated.</li>
+  <li>Review notes on R-1 are cleared; the Index is signed off.</li>
+</ul>
+<div class="callout tip"><span class="label">Keep the file together</span>
+<p>Save the app's workpaper (it carries the Evidence record and every transaction's source page and line) with your template workbook. For a real case, keep everything in an encrypted project and never upload real statements to a public demo.</p></div>
+<p class="small muted">Instructors: the answer key for the Hartwell case is demo/ANSWER_KEY.md in the app's download (it is not in the case pack).</p>
+
+</body>
+</html>

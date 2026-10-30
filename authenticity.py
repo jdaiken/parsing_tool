@@ -13,6 +13,16 @@ tend to leave the same tells, and this module looks for them:
 - summary totals that don't agree with the transactions;
 - amounts formatted differently from the rest of the statement.
 
+Statements written from scratch, by an AI chat tool or a script, leave different traces, and
+these checks look for them too:
+
+- the PDF was written by a programming library (the kind AI tools use to make PDFs), not a bank's system;
+- leftover chatbot text: markdown symbols, bracketed placeholders, "as an AI";
+- a date that doesn't exist (04/31, February 30);
+- a routing number that fails the check-digit test every real one passes.
+
+Two or more of those and the file is reported as possibly AI-generated or fabricated.
+
 None of these proves a statement is fake, and a clean result doesn't prove it is
 genuine. The reliable test is a copy obtained directly from the bank.
 """
@@ -40,6 +50,29 @@ EDITING_TOOLS = re.compile(
     r"inkscape|illustrator|pdf\s*editor|pdf-xchange|able2extract|pdf2go|online2pdf|sodapdf|docfly|lightpdf",
     re.IGNORECASE,
 )
+# Programming libraries that write PDFs from code. AI chat tools that "make a PDF" (ChatGPT's code tool, for one)
+# use these, as do scripts; banks' statement systems don't. ReportLab's defaults, an "anonymous" author and an
+# "untitled" title, are what a quick script leaves.
+GENERATOR_TOOLS = re.compile(
+    r"reportlab|fpdf|pdfkit|wkhtmltopdf|weasyprint|xhtml2pdf|jspdf|pdfmake|pdf-lib|pdfsharp|quest\s*pdf|dompdf|tcpdf|"
+    r"mpdf|html2pdf|puppeteer|playwright|headlesschrome|matplotlib|docx2pdf|pandoc",
+    re.IGNORECASE,
+)
+# Text a chatbot leaves behind: markdown symbols, bracketed placeholders and its own wording.
+AI_LEFTOVERS = re.compile(
+    r"\*\*[^*\n]{2,60}\*\*|^\s*#{1,4}\s+[A-Za-z]|"
+    r"\[(?:bank|your|insert|customer|account\s*holder|company|logo|address|name|date|amount|signature)[^\]\n]{0,30}\]|"
+    r"lorem ipsum|as an ai\b|language model|generated (?:by|with|using) (?:ai|chatgpt|gpt|claude|gemini|copilot)|\bchatgpt\b|\bopenai\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+# A routing number printed on the statement (nine digits after "routing", "ABA", "RTN" or "transit").
+ROUTING = re.compile(r"(?:routing|\baba\b|\brtn\b|transit)[^\d\n]{0,25}(\d{4}[\s-]?\d{4}[\s-]?\d)\b", re.IGNORECASE)
+# "Account Number: 4410228701", "Acct # XXXX-4417": the account number wherever the statement prints it.
+ACCOUNT_LABEL = re.compile(r"\b(?:account|acct)\.?\s*(?:number|no\.?|#)\s*[:#]?\s*((?:[X*•]+[\s-]?)*\d[\d\s-]{2,}\d)", re.IGNORECASE)
+# Dates as written on statements: 04/31, 04/31/2025, April 31, 2025.
+NUMERIC_DATE = re.compile(r"(?<![\d/.])(\d{1,2})/(\d{1,2})(?:/(\d{4}|\d{2}))?(?![\d/])")
+MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+WORD_DATE = re.compile(r"\b(" + "|".join(MONTHS) + r")\s+(\d{1,2}),?\s+(\d{4})\b", re.IGNORECASE)
 # Printer drivers and scanners: a printed or scanned copy, not the bank's file (a note, not a warning).
 PRINT_TOOLS = re.compile(r"print\s*to\s*pdf|quartz pdfcontext|scan|epson|canon|hp\s|xerox|ricoh|fujitsu|naps2", re.IGNORECASE)
 # A date in a statement period: "April 01, 2025" or "04/01/2025".
@@ -72,6 +105,8 @@ class Check:
     status: str  # ok | warn | note | skipped
     detail: str
     examples: List[str] = field(default_factory=list)
+    # A sign of a statement written from scratch (by an AI tool or a script) rather than one edited.
+    fabrication: bool = False
 
 
 def _money(value: float) -> str:
@@ -103,10 +138,23 @@ def _metadata_checks(pdf) -> List[Check]:
     after it was created.
     """
     meta = {k: str(v) for k, v in (pdf.metadata or {}).items()}
-    tools = " / ".join(dict.fromkeys(v for k, v in meta.items() if k in ("Creator", "Producer") and v.strip()))
+    # Placeholders a library writes when nobody names the creator ("anonymous", "(unspecified)") aren't a tool.
+    placeholder = {"anonymous", "(anonymous)", "unspecified", "(unspecified)", "unknown"}
+    tools = " / ".join(dict.fromkeys(v for k, v in meta.items()
+                                     if k in ("Creator", "Producer") and v.strip() and v.strip().lower() not in placeholder))
     checks: List[Check] = []
     if not tools:
         checks.append(Check("Software that made the PDF", NOTE, "The PDF doesn't say what made it (that information was removed or never written)."))
+    elif GENERATOR_TOOLS.search(tools):
+        defaults = [f'{key.lower()} "{meta[key].strip()}"' for key in ("Author", "Title")
+                    if meta.get(key, "").strip().lower() in ("anonymous", "(anonymous)", "untitled", "(untitled)")]
+        checks.append(Check(
+            "Software that made the PDF", WARN,
+            f"Made with {tools}, a programming library that AI chat tools and scripts use to write PDFs. Banks' statement "
+            "systems don't use these, so the file was most likely generated rather than downloaded from the bank."
+            + (f" It also has the library's default {' and '.join(defaults)}, left when nobody sets them." if defaults else ""),
+            fabrication=True,
+        ))
     elif EDITING_TOOLS.search(tools):
         checks.append(Check(
             "Software that made the PDF", WARN,
@@ -212,7 +260,11 @@ def _date_checks(tx: pd.DataFrame, full_text: str, is_card: bool) -> List[Check]
             if (section["section"] == "checks").any():
                 continue  # checks are often listed by number, not date
             ordered = section[section["transaction_type"] != "check"].dropna(subset=["txn_date"]).sort_values(["source_page", "source_line"])
-            backwards.extend(_out_of_order(ordered))
+            # A gap of several lines (a total, then the next heading) starts a new list: statements that group
+            # money out by type ("Electronic Withdrawals", then "Card Withdrawals") restart the dates in each.
+            gaps = (ordered["source_page"] != ordered["source_page"].shift()) | (ordered["source_line"].diff() > 3)
+            for _, run in ordered.groupby(gaps.cumsum(), sort=False):
+                backwards.extend(_out_of_order(run))
     checks = []
     if not checked_period:
         checks.append(Check("Dates inside the statement period", SKIPPED, "No statement period was found to compare against."))
@@ -361,6 +413,114 @@ def _format_check(full_text: str, scanned: bool) -> Check:
     return Check("Amounts formatted consistently", OK, "Amounts are formatted the same way throughout.")
 
 
+def _days_in(month: int, year: Optional[int]) -> int:
+    """Days in a month; February has 29 when the year isn't known."""
+    if month == 2:
+        return 29 if year is None or (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 28
+    return 30 if month in (4, 6, 9, 11) else 31
+
+
+def _impossible_dates(full_text: str) -> List[str]:
+    """Dates that don't exist (04/31, February 30, 02/29/2025), as printed. Skipped for day-first statements."""
+    numeric = NUMERIC_DATE.findall(full_text)
+    if any(12 < int(a) <= 31 and 1 <= int(b) <= 12 for a, b, _ in numeric):
+        numeric = []  # written day first (31/01): leave these to the date checks
+    found: List[str] = []
+    for month, day, year in numeric:
+        m, d = int(month), int(day)
+        y = (int(year) + (2000 if len(year) == 2 else 0)) if year else None
+        if 1 <= m <= 12 and 1 <= d <= 31 and d > _days_in(m, y):
+            found.append(f"{month}/{day}" + (f"/{year}" if year else ""))
+    for month, day, year in WORD_DATE.findall(full_text):
+        if int(day) > _days_in(MONTHS.index(month.lower()) + 1, int(year)):
+            found.append(f"{month} {day}, {year}")
+    return list(dict.fromkeys(found))
+
+
+def _valid_routing(number: str) -> bool:
+    """The ABA check-digit test: weights 3, 7, 1 over the nine digits must total a multiple of 10."""
+    digits = [int(c) for c in number]
+    total = sum(w * d for w, d in zip([3, 7, 1] * 3, digits))
+    return len(digits) == 9 and total % 10 == 0 and len(set(digits)) > 1
+
+
+def _fabrication_checks(full_text: str, tx: pd.DataFrame) -> List[Check]:
+    """
+    Signs a statement was written from scratch rather than produced by a bank: chatbot leftovers, dates that
+    don't exist, a routing number that fails its check digit, and an account number that changes.
+    """
+    checks: List[Check] = []
+    leftovers = list(dict.fromkeys(m.group(0).strip() for m in AI_LEFTOVERS.finditer(full_text)))
+    if leftovers:
+        checks.append(Check(
+            "Text left by an AI tool", WARN,
+            f"{len(leftovers)} piece{'s' if len(leftovers) != 1 else ''} of text a chatbot leaves behind: markdown symbols "
+            "(**bold**, # headings), bracketed placeholders like [Bank Name], or its own wording. Bank statement systems never "
+            "print these.", leftovers[:8], fabrication=True,
+        ))
+    else:
+        checks.append(Check("Text left by an AI tool", OK, "No markdown symbols, bracketed placeholders or chatbot wording."))
+
+    impossible = _impossible_dates(full_text)
+    if impossible:
+        checks.append(Check(
+            "Dates that exist", WARN,
+            f"{len(impossible)} date{'s' if len(impossible) != 1 else ''} that {'don' if len(impossible) != 1 else 'doesn'}'t exist on "
+            "a calendar. A bank's system can't print one; a person or an AI tool writing a statement by hand can.",
+            impossible[:8], fabrication=True,
+        ))
+    else:
+        checks.append(Check("Dates that exist", OK, "Every date printed is a real calendar date."))
+
+    routing = list(dict.fromkeys(re.sub(r"\D", "", m) for m in ROUTING.findall(full_text)))
+    bad = [r for r in routing if not _valid_routing(r)]
+    if not routing:
+        checks.append(Check("Routing number", SKIPPED, "No routing number is printed (many statements don't show one)."))
+    elif bad:
+        checks.append(Check(
+            "Routing number", WARN,
+            f"Routing number {', '.join(bad)} fails the check-digit test that every real U.S. routing number passes. Made-up "
+            "routing numbers are a common sign of a fabricated statement.", fabrication=True,
+        ))
+    else:
+        checks.append(Check("Routing number", OK, f"Routing number {', '.join(routing)} passes the check-digit test (this doesn't confirm which bank it belongs to)."))
+
+    if "account_number" in tx and tx["account_number"].dropna().nunique() > 1:
+        checks.append(Check("Account number the same throughout", SKIPPED, "The statement covers more than one account."))
+    else:
+        printed = [re.sub(r"\D", "", m) for m in ACCOUNT_LABEL.findall(full_text)]
+        endings = list(dict.fromkeys(p[-4:] for p in printed if len(p) >= 4))
+        if len(endings) > 1:
+            # A note, not a warning: a statement can print a linked account or a customer number too.
+            checks.append(Check(
+                "Account number the same throughout", NOTE,
+                f"Account numbers ending {', '.join('...' + e for e in endings)} are printed. That can be a linked account; if they are "
+                "meant to be the same account, a bank prints the same number everywhere and a statement written by hand or by an AI "
+                "tool often doesn't.",
+            ))
+        elif endings:
+            checks.append(Check("Account number the same throughout", OK, f"The account number (ending {endings[0]}) is the same everywhere it is printed."))
+        else:
+            checks.append(Check("Account number the same throughout", SKIPPED, "No labelled account number was found."))
+    return checks
+
+
+def _page_check(pdf, full_text: str) -> Check:
+    """'Page 1 of 3' on a file with a different number of pages: pages missing, or page numbers made up."""
+    claimed = {int(total) for _, total in re.findall(r"\bpage\s+(\d+)\s+of\s+(\d+)\b", full_text, re.IGNORECASE)}
+    if not claimed:
+        return Check("Page numbers match the file", SKIPPED, 'No "Page 1 of 2"-style page numbers are printed.')
+    actual = len(pdf.pages)
+    if claimed != {actual}:
+        said = " and ".join(str(n) for n in sorted(claimed))
+        return Check(
+            "Page numbers match the file", WARN,
+            f"The pages say the statement has {said} page{'s' if said != '1' else ''}, but the file has {actual}. Pages were "
+            "removed from this copy, or the page numbers were made up.",
+        )
+    return Check("Page numbers match the file", OK, f"The page numbers agree with the file's {actual} page{'s' if actual != 1 else ''}.")
+
+
 def check_document(file_bytes: bytes, transactions: pd.DataFrame, full_text: str, scanned_pages: int = 0) -> List[Check]:
     """Run every check on one statement PDF and the transactions read from it."""
     checks: List[Check] = []
@@ -376,6 +536,7 @@ def check_document(file_bytes: bytes, transactions: pd.DataFrame, full_text: str
                 ))
             else:
                 checks.append(_font_check(pdf))
+                checks.append(_page_check(pdf, full_text))
     except Exception:  # an unreadable or encrypted file still gets the checks below
         checks.append(Check("Software that made the PDF", SKIPPED, "The PDF's details couldn't be read."))
     if transactions.empty:
@@ -390,12 +551,17 @@ def check_document(file_bytes: bytes, transactions: pd.DataFrame, full_text: str
     checks.append(_balance_check(tx, scanned))
     checks.append(_summary_check(tx, full_text, is_card))
     checks.append(_format_check(full_text, scanned))
+    if not scanned:  # OCR misreads (a 3 for an 8) would look like made-up dates and numbers
+        checks.extend(_fabrication_checks(full_text, tx))
     return checks
 
 
 def verdict(checks: List[Check]) -> Tuple[str, str]:
-    """(level, headline) for a file: level is "clean", "review" or "altered"."""
+    """(level, headline) for a file: level is "clean", "review", "altered" or "generated" (possibly AI-generated)."""
     warnings = sum(c.status == WARN for c in checks)
+    generated = sum(c.status == WARN and c.fabrication for c in checks)
+    if generated >= 2:
+        return "generated", f"{generated} signs this statement may be AI-generated or fabricated"
     scanned = any(c.status == NOTE and "scanned copy" in c.detail for c in checks)
     if warnings >= 3:
         return "altered", f"{warnings} signs this copy may have been altered"
