@@ -138,6 +138,8 @@ You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** 
 ## Excel workpaper tabs
 - `Summary` (with the app version, analyst, project and time zone)
 - `Accounts` and `Statements` (the account inventory: each account's statements, period covered, months missing and what to follow up)
+
+The **Statements by account** download (same tab) is a separate workbook: the inventory, then a sheet per account with every statement's transactions and a running balance worked out by Excel formula, next to the balance the bank printed.
 - `Evidence` (each statement's SHA-256 fingerprint, pages, OCR, transactions, reconciliation and document check)
 - `Case_Notes` and `Case_Log` (when a project is open)
 - `Transactions` (each row names its source file, fingerprint, page and line)
@@ -177,7 +179,7 @@ You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** 
 
 ## Trying it without a statement
 
-The `demo/` folder holds a fictional elder-financial-exploitation case: three months of checking at a made-up bank, a credit card, a doctored "family copy" of one month, and a scanned, redacted copy. The full case adds the caregiver's business account at a credit union and her personal account at a second bank (both "subpoenaed"), an AI-generated "proof of repayment" from a fourth bank, and nine case documents in `demo/case_documents/`: an engagement letter, interview notes, the caregiver agreement, an invoice, bank notices, a wire confirmation, check images and opposing counsel's letter. The statements are filed in `demo/statements/`, one folder per account, with an account inventory (`Account_Inventory.md`, and a PDF for students). `demo/ANSWER_KEY.md` lists everything planted and the answers to the engagement questions. `demo/make_demo_case.py` and `demo/make_case_pack.py` rebuild the files.
+The `demo/` folder holds a fictional elder-financial-exploitation case: three months of checking at a made-up bank, a credit card, a doctored "family copy" of one month, and a scanned, redacted copy. The full case adds the caregiver's business account at a credit union and her personal account at a second bank (both "subpoenaed"), an AI-generated "proof of repayment" from a fourth bank, and nine case documents in `demo/case_documents/`: an engagement letter, interview notes, the caregiver agreement, an invoice, bank notices, a wire confirmation, check images and opposing counsel's letter. The statements are filed in `demo/statements/`, one folder per account, with an account inventory (`Account_Inventory.md`, and a PDF for students) and every statement in Excel (`Statements_by_Account.xlsx`, rebuilt by `demo/make_statements_workbook.py`). `demo/ANSWER_KEY.md` lists everything planted and the answers to the engagement questions. `demo/make_demo_case.py` and `demo/make_case_pack.py` rebuild the files.
 
 - **Try it with sample statements** (under the upload box) loads the three checking statements and the credit card.
 - **Try the full case** adds the caregiver's two accounts, for tracing the money across banks.

@@ -105,6 +105,7 @@ APP_FILES = [
     "demo/statements/Account_5_Wrenfield_Trust_D_Pruitt_questioned/11_wrenfield_repayment_proof_2025-05.pdf",
     "demo/ANSWER_KEY.md", "demo/make_demo_case.py", "demo/make_case_pack.py",
     "demo/statements/Account_Inventory.md", "demo/statements/Account_Inventory.pdf",
+    "demo/statements/Statements_by_Account.xlsx", "demo/make_statements_workbook.py",
     "LICENSE", "NOTICE", "requirements.txt", "requirements-lock.txt", "README.md", "SECURITY.md", "docs/SECURITY_AND_DATA_HANDLING.md", "docs/UNIVERSITY_DEPLOYMENT.md",
     "docs/Bank_Statement_Analyzer_User_Guide.pdf", "docs/Bank_Statement_Analyzer_Implementation_Guide.pdf",
     "docs/Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf", "docs/templates/Forensic_Workpaper_Template.xlsx",

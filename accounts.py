@@ -148,6 +148,7 @@ def statement_list(results: Sequence, file_names: Sequence[str], recon: Optional
                 "doc_level": doc_level,
                 "sha256": (getattr(result, "source", {}) or {}).get("sha256", ""),
                 "note": "",
+                "account_key": account_number,  # as read, to find the statement's transactions again
             })
     frame = pd.DataFrame(rows)
     if frame.empty:
@@ -266,8 +267,196 @@ def account_inventory(statements: pd.DataFrame) -> pd.DataFrame:
 
 def for_export(frame: pd.DataFrame) -> pd.DataFrame:
     """A copy with dates as mm/dd/yyyy text and readable column names, for the workpaper and downloads."""
-    out = frame.drop(columns=[c for c in ("doc_level",) if c in frame]).copy()
+    out = frame.drop(columns=[c for c in ("doc_level", "account_key") if c in frame]).copy()
     for column in ("period_start", "period_end"):
         if column in out:
             out[column] = pd.to_datetime(out[column]).dt.strftime("%m/%d/%Y")
     return out.rename(columns=lambda c: c.replace("_", " ").capitalize())
+
+
+# --- The statements as an Excel workbook ----------------------------------------------------------
+
+def _sheet_name(index: int, row) -> str:
+    """'1 Larkspur Checking 8701': a sheet name Excel accepts (31 characters, none of []:*?/\\)."""
+    bank = re.sub(r"\b(Bank|National|Credit Union|Trust|Valley|N\.A\.)\b", "", str(row["bank"])).split()
+    short = " ".join(bank[:2]) or "Bank"
+    kind = {"Credit card": "Card", "Deposit account": "Account"}.get(row["account_type"], row["account_type"])
+    number = str(row["account_number"]).replace("····", "").replace(NOT_SHOWN, "")
+    return re.sub(r"[\[\]:*?/\\]", "", f"{index} {short} {kind} {number}".strip())[:31]
+
+
+def statements_workbook(statements: pd.DataFrame, inventory: pd.DataFrame, transactions: pd.DataFrame,
+                        holders: Optional[Dict[str, str]] = None, title: str = "Statements by account") -> bytes:
+    """
+    The statements as an Excel workbook: an Accounts sheet (the inventory, each account linked to its sheet),
+    then one sheet per account with every statement on file, in period order. Each statement opens with
+    the balance it prints, lists its transactions with a running balance worked out by formula, and closes
+    with the printed closing balance and the difference, so anyone can check the arithmetic in Excel.
+    `holders` optionally names each account's holder ({account label: name}).
+    """
+    from io import BytesIO
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    navy, blue, taupe = "1D2844", "246094", "918E81"
+    head_fill, tint, soft = PatternFill("solid", fgColor=navy), PatternFill("solid", fgColor="E8EFF6"), PatternFill("solid", fgColor="F4F5F7")
+    warn_fill = PatternFill("solid", fgColor="FDF1EF")
+    thin = Side(style="thin", color="C5D4E3")
+    money, date_fmt = '#,##0.00;[Red]-#,##0.00;"-"', "mm/dd/yyyy"
+    holders = holders or {}
+
+    wb = Workbook()
+    summary = wb.active
+    summary.title = "Accounts"
+    names = {account: _sheet_name(i, row) for i, (account, row) in enumerate(inventory.set_index("account").iterrows(), start=1)}
+
+    def header(ws, row: int, labels: Sequence[str]) -> None:
+        """A navy header row."""
+        for col, label in enumerate(labels, start=1):
+            cell = ws.cell(row=row, column=col, value=label)
+            cell.font, cell.fill = Font(bold=True, color="FFFFFF"), head_fill
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+            cell.border = Border(bottom=thin)
+
+    # Accounts: the inventory, with a link to each account's sheet.
+    summary["A1"] = title
+    summary["A1"].font = Font(name="Cambria", size=16, bold=True, color=navy)
+    summary["A2"] = ("Each account has its own sheet (click its name). Running balances on those sheets are worked out by formula "
+                     "from each statement's opening balance; the difference column compares them with what the bank printed.")
+    summary["A2"].font = Font(size=9, color="555555")
+    columns = ["Account", "Holder", "Bank", "Type", "Account no.", "Statements", "First period", "Last period", "Months missing",
+               "Opening balance", "Closing balance", "Money in", "Money out", "Reconciliation", "Document check", "Follow up"]
+    header(summary, 4, columns)
+    for r, (_, row) in enumerate(inventory.iterrows(), start=5):
+        values = [row["account"], holders.get(row["account"], ""), row["bank"], row["account_type"], row["account_number"], row["statements"],
+                  row["period_start"], row["period_end"], row["months_missing"], row["opening_balance"], row["closing_balance"],
+                  row["money_in"], row["money_out"], row["reconciliation"], row["document_check"], row["follow_up"]]
+        for c, value in enumerate(values, start=1):
+            cell = summary.cell(row=r, column=c, value=None if (value is not None and not isinstance(value, str) and pd.isna(value)) else value)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            cell.border = Border(bottom=thin)
+            if c in (7, 8):
+                cell.value = cell.value.to_pydatetime() if isinstance(cell.value, pd.Timestamp) else cell.value
+                cell.number_format = date_fmt
+            if c in (10, 11, 12, 13):
+                cell.number_format = money
+        link = summary.cell(row=r, column=1)
+        link.hyperlink = f"#'{names[row['account']]}'!A1"
+        link.font = Font(color=blue, underline="single", bold=True)
+        if row["follow_up"] != "Nothing to follow up":
+            summary.cell(row=r, column=16).fill = warn_fill
+    for col, width in zip("ABCDEFGHIJKLMNOP", (36, 30, 24, 14, 13, 13, 11, 14, 22, 18, 14, 14, 14, 16, 30, 60)):
+        summary.column_dimensions[col].width = width
+    summary.freeze_panes = "B5"
+    summary.page_setup.orientation = "landscape"
+    summary.page_setup.fitToWidth, summary.page_setup.fitToHeight = 1, 0
+    summary.sheet_properties.pageSetUpPr.fitToPage = True
+
+    # Statements on file, under the inventory.
+    r0 = 5 + len(inventory) + 2
+    summary.cell(row=r0, column=1, value="Statements on file").font = Font(size=12, bold=True, color=navy)
+    header(summary, r0 + 1, ["Account", "File", "Period start", "Period end", "Opening balance", "Closing balance", "Transactions",
+                             "Reconciliation", "Document check", "SHA-256"])
+    for r, (_, row) in enumerate(statements.iterrows(), start=r0 + 2):
+        values = [row["account"], row["file"], row["period_start"], row["period_end"], row["opening_balance"], row["closing_balance"],
+                  row["transactions"], row["reconciliation"], row["document_check"], row["sha256"]]
+        for c, value in enumerate(values, start=1):
+            if isinstance(value, pd.Timestamp):
+                value = value.to_pydatetime()
+            cell = summary.cell(row=r, column=c, value=None if (value is not None and not isinstance(value, str) and pd.isna(value)) else value)
+            cell.number_format = date_fmt if c in (3, 4) else money if c in (5, 6) else "General"
+            cell.border = Border(bottom=thin)
+            cell.alignment = Alignment(wrap_text=c in (1, 2, 9), vertical="top")
+        summary.cell(row=r, column=2).hyperlink = f"#'{names[row['account']]}'!A1"
+
+    # One sheet per account.
+    cols = ["Date", "Description", "Money in", "Money out", "Balance (worked out)", "Balance (printed)", "Difference",
+            "Check no.", "Category", "Page", "Line"]
+    for account, inv in inventory.set_index("account").iterrows():
+        ws = wb.create_sheet(names[account])
+        ws.sheet_properties.tabColor = blue
+        card = inv["account_type"] == "Credit card"
+        ws["A1"] = account
+        ws["A1"].font = Font(name="Cambria", size=14, bold=True, color=navy)
+        ws["A2"] = " · ".join(x for x in (holders.get(account, ""), f"{inv['statements']} statement{'s' if inv['statements'] != 1 else ''}",
+                                          f"months missing: {inv['months_missing']}") if x)
+        ws["A3"] = f"Follow up: {inv['follow_up']}"
+        ws["A3"].alignment = Alignment(wrap_text=True, vertical="top")
+        ws.merge_cells("A3:K3")
+        ws.row_dimensions[3].height = 15 * max(1, min(6, len(inv["follow_up"]) // 140 + 1))
+        if inv["follow_up"] != "Nothing to follow up":
+            ws["A3"].fill = warn_fill
+        ws["A4"] = ("A card balance goes up with charges and down with payments." if card else
+                    "The balance goes up with money in and down with money out.") + \
+                   " Lines are in the order the statement prints them (in date order when it groups them by type)."
+        ws["A4"].font = Font(size=9, italic=True, color=taupe)
+        header(ws, 6, cols)
+        r = 7
+        for _, stmt in statements[statements["account"] == account].sort_values(["period_start", "file"]).iterrows():
+            tx = transactions[(transactions["statement_id"] == stmt["statement_id"])
+                              & (transactions["account_number"].fillna("") == stmt["account_key"])]
+            printed_balances = tx["running_balance"].notna().any() if "running_balance" in tx else False
+            tx = tx.sort_values(["source_page", "source_line"] if printed_balances else ["txn_date", "source_page", "source_line"])
+            period = (f"{stmt['period_start']:%m/%d/%Y} – {stmt['period_end']:%m/%d/%Y}" if pd.notna(stmt["period_start"]) else "period not shown")
+            ws.cell(row=r, column=1, value=f"{stmt['file']}   ·   {period}   ·   {stmt['reconciliation'] or 'not reconciled'}   ·   {stmt['document_check']}")
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=11)
+            questioned = stmt["doc_level"] != "clean" or bool(stmt["note"])
+            ws.cell(row=r, column=1).font = Font(bold=True, color="B42318" if stmt["doc_level"] in ("altered", "generated") else navy)
+            ws.cell(row=r, column=1).fill = warn_fill if questioned else tint
+            r += 1
+            ws.cell(row=r, column=2, value="Opening balance (per statement)").font = Font(italic=True)
+            opening = stmt["opening_balance"]
+            ws.cell(row=r, column=5, value=None if opening is None or pd.isna(opening) else float(opening)).number_format = money
+            ws.cell(row=r, column=6, value=None if opening is None or pd.isna(opening) else float(opening)).number_format = money
+            first_tx = r + 1
+            for _, t in tx.iterrows():
+                r += 1
+                when = t["txn_date"].to_pydatetime() if pd.notna(t["txn_date"]) else t.get("txn_date_raw")
+                values = [when, t["description"], None if pd.isna(t["credit"]) else float(t["credit"]),
+                          None if pd.isna(t["debit"]) else float(t["debit"])]
+                for c, value in enumerate(values, start=1):
+                    ws.cell(row=r, column=c, value=value)
+                ws.cell(row=r, column=1).number_format = date_fmt
+                sign = f"E{r - 1}+N(D{r})-N(C{r})" if card else f"E{r - 1}+N(C{r})-N(D{r})"
+                ws.cell(row=r, column=5, value=f'=IF(E{r - 1}="","",{sign})').number_format = money
+                if printed_balances and pd.notna(t["running_balance"]):
+                    ws.cell(row=r, column=6, value=float(t["running_balance"])).number_format = money
+                    ws.cell(row=r, column=7, value=f'=IF(OR(E{r}="",F{r}=""),"",ROUND(F{r}-E{r},2))').number_format = money
+                for c, key in ((8, "check_number"), (9, "txn_category"), (10, "source_page"), (11, "source_line")):
+                    value = t.get(key)
+                    if key == "txn_category" and isinstance(value, str):
+                        value = value.replace("_", " ").capitalize()  # "card_purchase" -> "Card purchase"
+                    ws.cell(row=r, column=c, value=None if value is None or (not isinstance(value, str) and pd.isna(value)) else value)
+                for c in (3, 4):
+                    ws.cell(row=r, column=c).number_format = money
+            last_tx = r
+            r += 1
+            ws.cell(row=r, column=2, value="Closing balance (per statement) and totals").font = Font(bold=True)
+            if last_tx >= first_tx:
+                ws.cell(row=r, column=3, value=f"=SUM(C{first_tx}:C{last_tx})")
+                ws.cell(row=r, column=4, value=f"=SUM(D{first_tx}:D{last_tx})")
+            ws.cell(row=r, column=5, value=f"=E{r - 1}")
+            closing = stmt["closing_balance"]
+            ws.cell(row=r, column=6, value=None if closing is None or pd.isna(closing) else float(closing))
+            ws.cell(row=r, column=7, value=f'=IF(OR(E{r}="",F{r}=""),"",ROUND(F{r}-E{r},2))')
+            for c in range(1, 12):
+                cell = ws.cell(row=r, column=c)
+                cell.fill, cell.border = soft, Border(top=thin, bottom=thin)
+                cell.font = Font(bold=True)
+                if c in (3, 4, 5, 6, 7):
+                    cell.number_format = money
+            r += 2
+        for col, width in zip("ABCDEFGHIJK", (11, 52, 13, 13, 15, 15, 11, 9, 18, 6, 6)):
+            ws.column_dimensions[col].width = width
+        ws.freeze_panes = "C7"
+        ws.cell(row=1, column=11, value="Back to Accounts").hyperlink = "#'Accounts'!A1"
+        ws.cell(row=1, column=11).font = Font(color=blue, underline="single", size=9)
+        ws.page_setup.orientation = "landscape"
+        ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.print_title_rows = "6:6"
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()

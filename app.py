@@ -29,7 +29,7 @@ import dashboard
 import fraud_rules
 import pdf_text
 import projects
-from accounts import account_inventory, for_export as accounts_for_export, statement_list
+from accounts import account_inventory, for_export as accounts_for_export, statement_list, statements_workbook
 from authenticity import WARN, checks_frame, verdict
 from auto_parser import CREDIT_WORDS
 from bank_directory import BANKS, directory_table
@@ -90,7 +90,7 @@ GUIDES = {
 QUICK_GUIDE = "docs/Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf"
 WORKPAPER_TEMPLATE = "docs/templates/Forensic_Workpaper_Template.xlsx"
 # The case pack: every statement and case document, without the answer key.
-CASE_PACK_PATTERNS = ["demo/statements/*/*.pdf", "demo/statements/Account_Inventory.*", "demo/case_documents/*.pdf",
+CASE_PACK_PATTERNS = ["demo/statements/*/*.pdf", "demo/statements/Account_Inventory.*", "demo/statements/Statements_by_Account.xlsx", "demo/case_documents/*.pdf",
                       QUICK_GUIDE, WORKPAPER_TEMPLATE]
 CASE_PACK_README = """The Hartwell case: practice materials (fictional)
 
@@ -99,6 +99,7 @@ transaction. Every page is marked as a sample.
 
 statements/   Eleven statements from four banks, one folder per account. Start with
               Account_Inventory.pdf: every account, whose it is, what is on file and where it came from.
+              Statements_by_Account.xlsx: every statement's transactions in Excel, a sheet per account.
               Account_1  Evelyn Hartwell's checking, Larkspur Valley Bank: March-May 2025 (1-3), the
                          "family copy" of April the caregiver gave the family (5), and a scanned,
                          redacted copy of May (6; read it with the version that runs on your computer)
@@ -1507,7 +1508,8 @@ with export_tab:
             accounts=accounts_for_export(inventory_df), statements=accounts_for_export(statements_df),
         )
         financial_bytes = build_financial_statements(all_transactions, reconciliation_df, analyzed_at)
-        d1, d2 = st.columns(2)
+        statements_bytes = statements_workbook(statements_df, inventory_df, all_transactions)
+        d1, d2, d3 = st.columns(3)
         with d1:
             st.markdown(
                 '<div class="download-card"><h4>Forensic workpaper</h4><p>Every transaction with its category, risk score '
@@ -1522,6 +1524,13 @@ with export_tab:
                 unsafe_allow_html=True,
             )
             st.download_button("Download financial statements (.xlsx)", data=BytesIO(financial_bytes).getvalue(), file_name=f"financial_statements_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:", width="stretch")
+        with d3:
+            st.markdown(
+                '<div class="download-card"><h4>Statements by account</h4><p>The account inventory, then a sheet per account '
+                "with each statement's transactions and its running balance checked by formula.</p></div>",
+                unsafe_allow_html=True,
+            )
+            st.download_button("Download statements by account (.xlsx)", data=statements_bytes, file_name=f"statements_by_account_{datetime.now():%Y%m%d_%H%M%S}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:", width="stretch")
         _section("Evidence record", "Each statement's SHA-256 fingerprint: any copy with the same fingerprint is byte-for-byte the "
                  "file analyzed here. The workpaper's Evidence sheet holds the same record, and every transaction row names its file, page and line.")
         st.dataframe(evidence, hide_index=True, width="stretch",

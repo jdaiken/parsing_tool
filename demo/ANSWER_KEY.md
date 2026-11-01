@@ -10,7 +10,7 @@ Her family asks for the statements. The caregiver gives them a "family copy" of 
 
 ## The files
 
-The statements are filed by account under `statements/`, one folder per account; `statements/Account_Inventory.md` lists the accounts and every statement on file for each.
+The statements are filed by account under `statements/`, one folder per account; `statements/Account_Inventory.md` lists the accounts and every statement on file for each, and `statements/Statements_by_Account.xlsx` has every statement's transactions in Excel, a sheet per account. In it, the family copy shows a $1,000 difference at check 2043 and the Wrenfield statement a $100 difference at the grocery line.
 
 | File | What it is |
 | --- | --- |
