@@ -29,6 +29,7 @@ import dashboard
 import fraud_rules
 import pdf_text
 import projects
+from accounts import account_inventory, for_export as accounts_for_export, statement_list
 from authenticity import WARN, checks_frame, verdict
 from auto_parser import CREDIT_WORDS
 from bank_directory import BANKS, directory_table
@@ -78,7 +79,7 @@ USER_HEADER = os.environ.get("BSA_USER_HEADER", "").strip()
 APP_FILE_PATTERNS = [
     "*.py", "*.pdf", "*.md", "LICENSE", "NOTICE", "requirements.txt", "requirements-lock.txt", "index.html", ".gitignore", ".nojekyll",
     ".dockerignore", "start.bat", "start.sh", ".streamlit/config.toml", ".vscode/*.json", ".github/*.yml",
-    ".github/workflows/*.yml", "assets/*", "assets/fonts/*", "demo/*", "demo/case_documents/*", "docs/*.md", "docs/*.pdf", "docs/guides/*", "docs/guides/img/*", "docs/templates/*", "deploy/*/*", "tools/*.py", "tests/*.py",
+    ".github/workflows/*.yml", "assets/*", "assets/fonts/*", "demo/*", "demo/statements/*", "demo/statements/*/*", "demo/case_documents/*", "docs/*.md", "docs/*.pdf", "docs/guides/*", "docs/guides/img/*", "docs/templates/*", "deploy/*/*", "tools/*.py", "tests/*.py",
 ]
 # The printable guides in docs/ (built from docs/guides by tools/build_guides.py): button label -> file.
 GUIDES = {
@@ -89,19 +90,22 @@ GUIDES = {
 QUICK_GUIDE = "docs/Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf"
 WORKPAPER_TEMPLATE = "docs/templates/Forensic_Workpaper_Template.xlsx"
 # The case pack: every statement and case document, without the answer key.
-CASE_PACK_PATTERNS = ["demo/[0-9]*.pdf", "demo/case_documents/*.pdf", QUICK_GUIDE, WORKPAPER_TEMPLATE]
+CASE_PACK_PATTERNS = ["demo/statements/*/*.pdf", "demo/statements/Account_Inventory.*", "demo/case_documents/*.pdf",
+                      QUICK_GUIDE, WORKPAPER_TEMPLATE]
 CASE_PACK_README = """The Hartwell case: practice materials (fictional)
 
 Everything in this pack is invented for training: the banks, the people, the account numbers and every
 transaction. Every page is marked as a sample.
 
-statements/   Eleven statements from four banks:
-              1-4   Evelyn Hartwell's checking (Mar-May 2025) and credit card (May), Larkspur Valley Bank
-              5     The "family copy" of April the caregiver gave the family
-              6     A scanned, redacted copy of May (read it with the version that runs on your computer)
-              7-8   DP Companion Care LLC business checking, Quillbrook Credit Union (subpoenaed)
-              9-10  Dana Pruitt personal checking, Oxbow Prairie National Bank (subpoenaed)
-              11    The "proof of repayment" sent by Dana Pruitt's attorney
+statements/   Eleven statements from four banks, one folder per account. Start with
+              Account_Inventory.pdf: every account, whose it is, what is on file and where it came from.
+              Account_1  Evelyn Hartwell's checking, Larkspur Valley Bank: March-May 2025 (1-3), the
+                         "family copy" of April the caregiver gave the family (5), and a scanned,
+                         redacted copy of May (6; read it with the version that runs on your computer)
+              Account_2  Evelyn Hartwell's Visa card, Larkspur Valley Bank: May 2025 (4)
+              Account_3  DP Companion Care LLC business checking, Quillbrook Credit Union (subpoenaed): 7-8
+              Account_4  Dana Pruitt personal checking, Oxbow Prairie National Bank (subpoenaed): 9-10
+              Account_5  The "proof of repayment" sent by Dana Pruitt's attorney (11)
 case_documents/  Exhibits A to I. Start with Exhibit A, the engagement letter: it lists the questions to answer.
 Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf   The method, step by step.
 Forensic_Workpaper_Template.xlsx                   The workpapers to fill in.
@@ -112,11 +116,19 @@ Load the statements into the Bank Statement Analyzer (or click "Try the full cas
 # The fictional demo case in demo/ (see demo/ANSWER_KEY.md): three months of checking and a credit card; the
 # full case adds the caregiver's business and personal accounts at two other banks; a doctored "family copy" of
 # April next to the genuine April; and an AI-generated "proof of repayment" next to the genuine May.
-SAMPLE_CASE = ["demo/1_checking_2025-03.pdf", "demo/2_checking_2025-04.pdf", "demo/3_checking_2025-05.pdf", "demo/4_credit_card_2025-05.pdf"]
-SAMPLE_FULL = SAMPLE_CASE + ["demo/7_dp_companion_care_2025-04.pdf", "demo/8_dp_companion_care_2025-05.pdf",
-                             "demo/9_pruitt_personal_2025-04.pdf", "demo/10_pruitt_personal_2025-05.pdf"]
-SAMPLE_DOCTORED = ["demo/2_checking_2025-04.pdf", "demo/5_checking_2025-04_family_copy.pdf"]
-SAMPLE_AI = ["demo/3_checking_2025-05.pdf", "demo/11_wrenfield_repayment_proof_2025-05.pdf"]
+# Each account's statements in their own folder (demo/statements/Account_Inventory.md lists them).
+_ACCOUNTS = "demo/statements/"
+_CHECKING = _ACCOUNTS + "Account_1_Larkspur_Checking_x8701_E_Hartwell/"
+_CARD = _ACCOUNTS + "Account_2_Larkspur_Visa_x7731_E_Hartwell/"
+_LLC = _ACCOUNTS + "Account_3_Quillbrook_CU_Business_x3390_DP_Companion_Care/"
+_PRUITT = _ACCOUNTS + "Account_4_Oxbow_Prairie_Checking_x5520_D_Pruitt/"
+_WRENFIELD = _ACCOUNTS + "Account_5_Wrenfield_Trust_D_Pruitt_questioned/"
+SAMPLE_CASE = [_CHECKING + "1_checking_2025-03.pdf", _CHECKING + "2_checking_2025-04.pdf", _CHECKING + "3_checking_2025-05.pdf",
+               _CARD + "4_credit_card_2025-05.pdf"]
+SAMPLE_FULL = SAMPLE_CASE + [_LLC + "7_dp_companion_care_2025-04.pdf", _LLC + "8_dp_companion_care_2025-05.pdf",
+                             _PRUITT + "9_pruitt_personal_2025-04.pdf", _PRUITT + "10_pruitt_personal_2025-05.pdf"]
+SAMPLE_DOCTORED = [_CHECKING + "2_checking_2025-04.pdf", _CHECKING + "5_checking_2025-04_family_copy.pdf"]
+SAMPLE_AI = [_CHECKING + "3_checking_2025-05.pdf", _WRENFIELD + "11_wrenfield_repayment_proof_2025-05.pdf"]
 
 st.set_page_config(page_title=APP_NAME, page_icon=":material/account_balance:", layout="wide")
 
@@ -530,6 +542,51 @@ def _app_files() -> tuple:
     return tuple(sorted((p.relative_to(APP_DIR).as_posix(), p.stat().st_mtime) for p in found))
 
 
+def _account_section(inventory: pd.DataFrame, statements: pd.DataFrame) -> None:
+    """
+    The account inventory: one row per account with the period its statements cover, missing months and
+    totals; what to follow up on each; and every statement filed under its account.
+    """
+    if inventory.empty:
+        return
+    count = len(inventory)
+    _section("Accounts", f"{count} account{'s' if count != 1 else ''} in {len(statements)} statement{'s' if len(statements) != 1 else ''}, "
+                         "with the period each covers and anything to follow up")
+    table = inventory.assign(
+        period=[f"{a:%m/%d/%Y} – {b:%m/%d/%Y}" if pd.notna(a) and pd.notna(b) else "-" for a, b in zip(inventory["period_start"], inventory["period_end"])]
+    )
+    st.dataframe(
+        table[["bank", "account_type", "account_number", "statements", "period", "months_missing", "opening_balance",
+               "closing_balance", "reconciliation", "document_check"]],
+        column_config={
+            "bank": "Bank", "account_type": "Type", "account_number": "Account", "statements": st.column_config.NumberColumn("Statements"),
+            "period": "Period covered", "months_missing": "Months missing",
+            "opening_balance": st.column_config.NumberColumn("Opening balance", **MONEY_COLUMN),
+            "closing_balance": st.column_config.NumberColumn("Closing balance", **MONEY_COLUMN),
+            "reconciliation": "Reconciliation", "document_check": st.column_config.TextColumn("Document check", width="medium"),
+        },
+        hide_index=True, width="stretch",
+    )
+    for _, row in inventory.iterrows():
+        if row["follow_up"] != "Nothing to follow up":
+            # Escape $ so two amounts in one note aren't read as a math formula.
+            st.warning(f"**{row['account']}:** {row['follow_up']}".replace("$", "\\$"), icon=":material/account_balance:")
+    with st.expander("Statements by account", icon=":material/folder_open:"):
+        for account, grp in statements.groupby("account", sort=True):
+            st.markdown(f"**{account}**")
+            st.dataframe(
+                grp.assign(period=[f"{a:%m/%d/%Y} – {b:%m/%d/%Y}" if pd.notna(a) else "-" for a, b in zip(grp["period_start"], grp["period_end"])])[
+                    ["file", "period", "opening_balance", "closing_balance", "transactions", "reconciliation", "document_check"]],
+                column_config={
+                    "file": "File", "period": "Period", "transactions": "Transactions", "reconciliation": "Reconciliation",
+                    "opening_balance": st.column_config.NumberColumn("Opening", **MONEY_COLUMN),
+                    "closing_balance": st.column_config.NumberColumn("Closing", **MONEY_COLUMN),
+                    "document_check": "Document check",
+                },
+                hide_index=True, width="stretch",
+            )
+
+
 def _case_pack_files() -> List[Path]:
     """The files in the student case pack that ship with this copy of the app."""
     return sorted({p for pattern in CASE_PACK_PATTERNS for p in APP_DIR.glob(pattern) if p.is_file()})
@@ -542,8 +599,9 @@ def _case_pack_zip(stamp: tuple) -> bytes:
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("Hartwell_case_pack/README.txt", CASE_PACK_README)
         for path, _ in stamp:
-            folder = "statements/" if path.startswith("demo/") and "/case_documents/" not in path else "case_documents/" if "case_documents" in path else ""
-            zf.write(APP_DIR / path, f"Hartwell_case_pack/{folder}{Path(path).name}")
+            # Keep demo/'s layout (statements/<account>/, case_documents/); the guide and template go at the top.
+            inside = Path(path).relative_to("demo").as_posix() if path.startswith("demo/") else Path(path).name
+            zf.write(APP_DIR / path, f"Hartwell_case_pack/{inside}")
     return buffer.getvalue()
 
 
@@ -867,7 +925,9 @@ if has_uploads:
         st.warning(warning, icon=":material/visibility_off:")
     if results:
         # Merge parsed output from all successfully processed statements.
-        all_transactions = pd.concat([r.transactions for r in results], ignore_index=True)
+        # A file with no transactions (not a statement) is left out: its empty columns would turn the dates into text.
+        read = [r.transactions for r in results if not r.transactions.empty]
+        all_transactions = pd.concat(read, ignore_index=True) if read else results[0].transactions
         all_flags = pd.concat([r.flags for r in results], ignore_index=True)
         all_raw = pd.concat([r.raw_text for r in results], ignore_index=True)
         # Fraud patterns are looked for across all statements together (a new payee only shows up
@@ -919,6 +979,9 @@ if not evidence.empty and not reconciliation_df.empty:
     evidence["Reconciliation"] = [
         ", ".join(sorted(set(reconciliation_df.loc[file_of == Path(name).stem, "status"].astype(str)))) for name in evidence["File"]
     ]
+# The account inventory: which accounts the statements cover, and the statements on file for each.
+statements_df = statement_list(results, file_names, reconciliation_df)
+inventory_df = account_inventory(statements_df)
 has_data = has_uploads and not all_transactions.empty
 EMPTY_NOTE = "Upload a statement above, or click **Try it with sample statements**, to see results here."
 
@@ -1095,6 +1158,7 @@ with overview_tab:
                 ("Higher-risk items", f"{high_risk_count + medium_risk_count}", f"{high_risk_count} high · {medium_risk_count} medium", "red"),
             ]
         )
+        _account_section(inventory_df, statements_df)
         c1, c2 = st.columns([1.5, 1])
         with c1:
             _section("Where the money went", "Number of transactions by category")
@@ -1440,6 +1504,7 @@ with export_tab:
         workpaper_bytes = build_workpaper(
             all_transactions.drop(columns=["note_key"], errors="ignore"), all_flags, all_raw if include_raw_text else pd.DataFrame(),
             analyzed_at, document_checks, case_notes, evidence, run_details, case_log,
+            accounts=accounts_for_export(inventory_df), statements=accounts_for_export(statements_df),
         )
         financial_bytes = build_financial_statements(all_transactions, reconciliation_df, analyzed_at)
         d1, d2 = st.columns(2)

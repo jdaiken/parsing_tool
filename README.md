@@ -25,8 +25,8 @@ All three are built from `docs/guides/` with `python tools/build_guides.py`.
 
 ### Student materials
 
-- **[Workpaper template](docs/templates/Forensic_Workpaper_Template.xlsx)** (Excel): an indexed engagement file. Scope, document index, bank reconciliation, sources and uses, fund tracing, payee and cash analysis, red flag log, document authenticity, loss calculation, findings and review notes, with formulas, drop-downs and an example row on each sheet. Rebuild it with `python tools/build_workpaper_template.py`.
-- **Hartwell case pack**: every statement and case document of the practice case, with the guide and the template, in one .zip. The app's sidebar offers it under *Student materials* (it leaves out the answer key).
+- **[Workpaper template](docs/templates/Forensic_Workpaper_Template.xlsx)** (Excel): an indexed engagement file. Scope, document index, account inventory, bank reconciliation, sources and uses, fund tracing, payee and cash analysis, red flag log, document authenticity, loss calculation, findings and review notes, with formulas, drop-downs and an example row on each sheet. Rebuild it with `python tools/build_workpaper_template.py`.
+- **Hartwell case pack**: every statement (filed by account, with the account inventory) and case document of the practice case, with the guide and the template, in one .zip. The app's sidebar offers it under *Student materials* (it leaves out the answer key).
 
 ## Ways to use it
 
@@ -137,6 +137,7 @@ You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** 
 
 ## Excel workpaper tabs
 - `Summary` (with the app version, analyst, project and time zone)
+- `Accounts` and `Statements` (the account inventory: each account's statements, period covered, months missing and what to follow up)
 - `Evidence` (each statement's SHA-256 fingerprint, pages, OCR, transactions, reconciliation and document check)
 - `Case_Notes` and `Case_Log` (when a project is open)
 - `Transactions` (each row names its source file, fingerprint, page and line)
@@ -176,13 +177,13 @@ You don't need to add a bank to use it. Saving a bank in the **Add a New Bank** 
 
 ## Trying it without a statement
 
-The `demo/` folder holds a fictional elder-financial-exploitation case: three months of checking at a made-up bank, a credit card, a doctored "family copy" of one month, and a scanned, redacted copy. The full case adds the caregiver's business account at a credit union and her personal account at a second bank (both "subpoenaed"), an AI-generated "proof of repayment" from a fourth bank, and nine case documents in `demo/case_documents/`: an engagement letter, interview notes, the caregiver agreement, an invoice, bank notices, a wire confirmation, check images and opposing counsel's letter. `demo/ANSWER_KEY.md` lists everything planted and the answers to the engagement questions. `demo/make_demo_case.py` and `demo/make_case_pack.py` rebuild the files.
+The `demo/` folder holds a fictional elder-financial-exploitation case: three months of checking at a made-up bank, a credit card, a doctored "family copy" of one month, and a scanned, redacted copy. The full case adds the caregiver's business account at a credit union and her personal account at a second bank (both "subpoenaed"), an AI-generated "proof of repayment" from a fourth bank, and nine case documents in `demo/case_documents/`: an engagement letter, interview notes, the caregiver agreement, an invoice, bank notices, a wire confirmation, check images and opposing counsel's letter. The statements are filed in `demo/statements/`, one folder per account, with an account inventory (`Account_Inventory.md`, and a PDF for students). `demo/ANSWER_KEY.md` lists everything planted and the answers to the engagement questions. `demo/make_demo_case.py` and `demo/make_case_pack.py` rebuild the files.
 
 - **Try it with sample statements** (under the upload box) loads the three checking statements and the credit card.
 - **Try the full case** adds the caregiver's two accounts, for tracing the money across banks.
 - **Try a doctored statement** loads a genuine month next to the doctored copy, so the Document Check tab can show the difference.
 - **Try an AI-generated statement** loads the "proof of repayment" next to the genuine May statement it contradicts.
-- To show OCR, drag `demo/6_checking_2025-05_scanned_redacted.pdf` into the version that runs on your computer.
+- To show OCR, drag `demo/statements/Account_1_Larkspur_Checking_x8701_E_Hartwell/6_checking_2025-05_scanned_redacted.pdf` into the version that runs on your computer.
 
 ## Tests
 

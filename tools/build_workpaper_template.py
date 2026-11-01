@@ -8,6 +8,7 @@ One workbook, one indexed workpaper per sheet, the way a forensic engagement fil
     Index  the file: case details, the list of workpapers, sign-offs and tickmarks
     A-1    scope: the questions the client asked, and where each is answered
     A-2    document index: every document received, its SHA-256 and its Document Check result
+    A-3    account inventory: every account, its statements on file, and what is missing
     B-1    bank reconciliation: each statement proved against its own printed figures
     B-2    sources and uses of funds, by month
     C-1    fund tracing: each payment out, matched to where it arrived
@@ -216,6 +217,22 @@ def build() -> Workbook:
            example=["5", "April 2025 checking statement, \"family copy\"", "Dana Pruitt (by email)", "Client", "06/24/2025",
                     "5_checking_2025-04_family_copy.pdf", "(copy from the app)", 1, "04/01-04/30/2025", "May have been altered",
                     "Compare with Doc 2, the bank's copy"])
+
+    # A-3 Account inventory -------------------------------------------------------------------
+    ws = add("A-3", "Account inventory",
+             "One row per account: whose it is, the statements on file, and what is still missing. Include accounts the documents mention "
+             "that you have no statements for (a CD, a loan, the recipient's accounts): each is a records request. The app's Summary tab "
+             "builds the first columns for the statements loaded (Accounts section) and flags missing months, balances that don't carry "
+             "forward, and two statements for the same period.", 13)
+    _table(ws, [("#", 5, "int", None), ("Account holder", 22, "text", None), ("Bank", 20, "text", None), ("Type", 14, "text", None),
+                ("Account (last 4)", 10, "text", None), ("Statements on file (doc IDs)", 22, "text", None),
+                ("First period", 11, "date", None), ("Last period", 11, "date", None),
+                ("Months on file", 9, "=IF(OR(G{r}=\"\",H{r}=\"\"),\"\",(YEAR(H{r})-YEAR(G{r}))*12+MONTH(H{r})-MONTH(G{r})+1)/*int*/", None),
+                ("Months missing", 16, "text", None), ("Source (bank, subpoena, client, other party)", 22, "text", None),
+                ("To request", 26, "text", None), ("Notes", 28, "text", None)],
+           example=[1, "Evelyn R. Hartwell", "Larkspur Valley Bank", "Checking", "8701", "1, 2, 3 (also 5, 6: copies)", "03/01/2025",
+                    "05/31/2025", None, "None", "Bank (POA authorization); 5 from Dana Pruitt; 6 police packet",
+                    "Statements before March 2025; June 2025 onward", "5 disagrees with 2: see D-2"], rows=15)
 
     # B-1 Bank reconciliation -------------------------------------------------------------------
     ws = add("B-1", "Bank reconciliation (proof of each statement)",

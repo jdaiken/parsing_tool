@@ -36,6 +36,7 @@
       import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@1.10.0/build/stlite.js";
 
       const sourceFiles = [
+        "accounts.py",
         "app.py",
         "authenticity.py",
         "auto_parser.py",
@@ -56,16 +57,16 @@
         "assets/fonts/inter-latin-wght-normal.woff2",
         "assets/fonts/jost-latin-wght-normal.woff2",
         "assets/fonts/cormorant-garamond-latin-wght-italic.woff2",
-        "demo/1_checking_2025-03.pdf",
-        "demo/2_checking_2025-04.pdf",
-        "demo/3_checking_2025-05.pdf",
-        "demo/4_credit_card_2025-05.pdf",
-        "demo/5_checking_2025-04_family_copy.pdf",
-        "demo/7_dp_companion_care_2025-04.pdf",
-        "demo/8_dp_companion_care_2025-05.pdf",
-        "demo/9_pruitt_personal_2025-04.pdf",
-        "demo/10_pruitt_personal_2025-05.pdf",
-        "demo/11_wrenfield_repayment_proof_2025-05.pdf",
+        "demo/statements/Account_1_Larkspur_Checking_x8701_E_Hartwell/1_checking_2025-03.pdf",
+        "demo/statements/Account_1_Larkspur_Checking_x8701_E_Hartwell/2_checking_2025-04.pdf",
+        "demo/statements/Account_1_Larkspur_Checking_x8701_E_Hartwell/3_checking_2025-05.pdf",
+        "demo/statements/Account_2_Larkspur_Visa_x7731_E_Hartwell/4_credit_card_2025-05.pdf",
+        "demo/statements/Account_1_Larkspur_Checking_x8701_E_Hartwell/5_checking_2025-04_family_copy.pdf",
+        "demo/statements/Account_3_Quillbrook_CU_Business_x3390_DP_Companion_Care/7_dp_companion_care_2025-04.pdf",
+        "demo/statements/Account_3_Quillbrook_CU_Business_x3390_DP_Companion_Care/8_dp_companion_care_2025-05.pdf",
+        "demo/statements/Account_4_Oxbow_Prairie_Checking_x5520_D_Pruitt/9_pruitt_personal_2025-04.pdf",
+        "demo/statements/Account_4_Oxbow_Prairie_Checking_x5520_D_Pruitt/10_pruitt_personal_2025-05.pdf",
+        "demo/statements/Account_5_Wrenfield_Trust_D_Pruitt_questioned/11_wrenfield_repayment_proof_2025-05.pdf",
       ];
       // Included only if present, so adding a logo needs no change here.
       // Optional files, included only if present (a logo; files for "Download the app"; GitHub Pages
@@ -75,8 +76,9 @@
         "LICENSE", "NOTICE", "requirements.txt", "requirements-lock.txt", "README.md", "SECURITY.md", "index.html", ".gitignore", ".nojekyll", "start.bat", "start.sh",
         ".streamlit/config.toml", ".vscode/launch.json", ".vscode/tasks.json", ".vscode/extensions.json",
         "docs/Bank_Statement_Analyzer_User_Guide.pdf", "docs/Bank_Statement_Analyzer_Implementation_Guide.pdf",
-        "demo/ANSWER_KEY.md", "demo/make_demo_case.py", "demo/6_checking_2025-05_scanned_redacted.pdf",
-        "demo/make_case_pack.py", "docs/Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf", "docs/templates/Forensic_Workpaper_Template.xlsx",
+        "demo/ANSWER_KEY.md", "demo/make_demo_case.py", "demo/statements/Account_1_Larkspur_Checking_x8701_E_Hartwell/6_checking_2025-05_scanned_redacted.pdf",
+        "demo/make_case_pack.py", "demo/statements/Account_Inventory.md", "demo/statements/Account_Inventory.pdf",
+        "docs/Bank_Statement_Analyzer_Quick_Analysis_Guide.pdf", "docs/templates/Forensic_Workpaper_Template.xlsx",
         "demo/case_documents/Exhibit_A_Engagement_letter.pdf", "demo/case_documents/Exhibit_B_Family_interview_notes.pdf", "demo/case_documents/Exhibit_C_Caregiver_services_agreement.pdf",
         "demo/case_documents/Exhibit_D_DP_Companion_Care_invoice.pdf", "demo/case_documents/Exhibit_E_CD_maturity_notice.pdf", "demo/case_documents/Exhibit_F_Account_change_confirmation.pdf",
         "demo/case_documents/Exhibit_G_Wire_transfer_confirmation.pdf", "demo/case_documents/Exhibit_H_Check_images.pdf", "demo/case_documents/Exhibit_I_Opposing_counsel_letter.pdf",

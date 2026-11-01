@@ -10,7 +10,7 @@ import projects as P
 from conftest import DEMO
 
 PASSWORD = "blue heron at dawn"
-PDF = (DEMO / "1_checking_2025-03.pdf").read_bytes()
+PDF = next(DEMO.rglob("1_checking_2025-03.pdf")).read_bytes()
 
 
 @pytest.fixture

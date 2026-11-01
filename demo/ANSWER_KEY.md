@@ -10,6 +10,8 @@ Her family asks for the statements. The caregiver gives them a "family copy" of 
 
 ## The files
 
+The statements are filed by account under `statements/`, one folder per account; `statements/Account_Inventory.md` lists the accounts and every statement on file for each.
+
 | File | What it is |
 | --- | --- |
 | `1_checking_2025-03.pdf` | March checking. Normal activity; this is the baseline. |

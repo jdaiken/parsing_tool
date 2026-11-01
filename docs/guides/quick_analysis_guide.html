@@ -43,7 +43,7 @@
 
 <div class="grid">
   <div class="card navy"><h4>1. Scope</h4><p>Write down the questions you were asked, and the limits of the work. [A-1]</p></div>
-  <div class="card navy"><h4>2. Organize and fingerprint</h4><p>List every document, where it came from, and each statement's SHA-256. [A-2]</p></div>
+  <div class="card navy"><h4>2. Organize and fingerprint</h4><p>List every document and its SHA-256; inventory every account and what is missing. [A-2, A-3]</p></div>
   <div class="card"><h4>3. Prove every statement</h4><p>Load the statements; confirm each one reconciles before you rely on it. [B-1]</p></div>
   <div class="card"><h4>4. Check authenticity</h4><p>Read the Document Check for each file: edited? AI-generated? [D-2]</p></div>
   <div class="card"><h4>5. Sources and uses</h4><p>Summarize money in and out by month, so the unusual stands out. [B-2]</p></div>
@@ -60,15 +60,16 @@
 </ul></div>
 
 <h2 class="chapter">2. Organize and fingerprint the documents</h2>
-<p class="lead">Before any analysis, know exactly what you have, where it came from, and what you were asked. [A-1, A-2]</p>
+<p class="lead">Before any analysis, know exactly what you have, where it came from, and what you were asked. [A-1, A-2, A-3]</p>
 <ol class="steps">
   <li><b>Write down the questions.</b> Copy each question from the engagement letter into A-1, in the client's words. Your findings will answer them one by one.</li>
   <li><b>Index every document.</b> On A-2, give each a number and record what it is, who produced it, how you got it (from the bank, by subpoena, from the client, from the other side) and when.</li>
   <li><b>Separate bank-produced records from copies.</b> A statement downloaded by the bank or produced under subpoena is stronger evidence than a copy someone handed over. Note which is which.</li>
+  <li><b>Inventory the accounts.</b> Load the statements and read the <span class="ui">Accounts</span> section of the Summary tab: one row per account, the period its statements cover, months missing, and anything to follow up (a balance that doesn't carry forward, two statements for the same period). Copy it to A-3, add accounts the documents mention that you have no statements for, and list what to request.</li>
   <li><b>Fingerprint each statement.</b> Load the statements in the app, open <span class="ui">Download Workpapers</span>, and copy each file's <b>SHA-256</b> from the Evidence record into A-2. If anyone later questions which file you analyzed, the same file gives the same fingerprint.</li>
   <li><b>Use a project for real cases.</b> In the sidebar, <span class="ui">New project</span> keeps the statements, your notes and a log of what was done together, encrypted with your password.</li>
 </ol>
-<figure><img src="img/downloads.png" alt="Download Workpapers tab with the Evidence record"><figcaption>The Evidence record: each file's SHA-256 fingerprint, size, pages and transaction count.</figcaption></figure>
+<figure class="short"><img src="img/accounts.png" alt="Accounts section of the Summary tab"><figcaption>The Accounts section: each account, the period its statements cover, months missing, and what to follow up.</figcaption></figure>
 
 <h2 class="chapter">3. Prove every statement</h2>
 <p class="lead">Before you use a single number, show that the analyzer read each statement completely. [B-1]</p>
@@ -202,7 +203,7 @@
 <h3>Exercises</h3>
 <ol class="steps">
   <li>Read Exhibit A. Put its five questions on A-1.</li>
-  <li>Index all twenty documents on A-2 with the statements' fingerprints. Which came from a bank, and which from someone with an interest in the outcome?</li>
+  <li>Index the documents on A-2 and the accounts on A-3, starting from Account_Inventory.pdf. Which came from a bank? What is missing?</li>
   <li>Prove every statement on B-1. Which one doesn't reconcile, and why?</li>
   <li>Complete D-2 for files 5 and 11. Then test file 11's content: do its two "loan repayments" appear anywhere in Evelyn's records?</li>
   <li>Build B-2 for Evelyn's checking. What happened on April 3, April 14 and April 15? (Exhibits E, F and G help.)</li>
@@ -214,6 +215,7 @@
 <ul class="checklist">
   <li>The client's questions are on A-1, in their words, with the limits of the work.</li>
   <li>Every document is on A-2: source, how obtained, date, and each statement's SHA-256.</li>
+  <li>Every account is on A-3, with the statements on file, the months missing and what was requested.</li>
   <li>Every statement reconciles on B-1, or the variance is explained. No months are missing.</li>
   <li>Every statement has a Document Check result on A-2 and D-2. Questioned documents were tested against the other side's records.</li>
   <li>Any warning led to a request for the statement directly from the bank.</li>

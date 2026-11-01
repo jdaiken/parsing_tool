@@ -26,17 +26,20 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from make_demo_case import BANNER, _set_dates, money, with_balances
+from make_demo_case import BANNER, STATEMENTS, _set_dates, money, with_balances
 
 OUT = Path(__file__).resolve().parent
 DOCS = OUT / "case_documents"
+LLC_DIR = STATEMENTS / "Account_3_Quillbrook_CU_Business_x3390_DP_Companion_Care"
+PRUITT_DIR = STATEMENTS / "Account_4_Oxbow_Prairie_Checking_x5520_D_Pruitt"
+WRENFIELD_DIR = STATEMENTS / "Account_5_Wrenfield_Trust_D_Pruitt_questioned"
 PAGE_W, PAGE_H = letter
 
 # --- People and accounts (all fictional) ---------------------------------------------------------
@@ -385,15 +388,17 @@ def main_statements() -> None:
     """Write files 7 to 11 and print the balances for the answer key."""
     llc_april, llc_april_close = with_balances(LLC_APRIL_OPENING, LLC_APRIL)
     llc_may, llc_may_close = with_balances(llc_april_close, LLC_MAY)
-    quillbrook_statement(OUT / "7_dp_companion_care_2025-04.pdf", "04/01/2025 - 04/30/2025", LLC_APRIL_OPENING, llc_april)
-    quillbrook_statement(OUT / "8_dp_companion_care_2025-05.pdf", "05/01/2025 - 05/31/2025", llc_april_close, llc_may)
-    dana_april_close = oxbow_statement(OUT / "9_pruitt_personal_2025-04.pdf", "April 1, 2025 through April 30, 2025", DANA_APRIL_OPENING, DANA_APRIL)
-    dana_may_close = oxbow_statement(OUT / "10_pruitt_personal_2025-05.pdf", "May 1, 2025 through May 31, 2025", dana_april_close, DANA_MAY)
-    ai_generated_statement(OUT / "11_wrenfield_repayment_proof_2025-05.pdf")
-    for name, day in (("7_dp_companion_care_2025-04", "20250501"), ("8_dp_companion_care_2025-05", "20250601"),
-                      ("9_pruitt_personal_2025-04", "20250501"), ("10_pruitt_personal_2025-05", "20250601"),
-                      ("11_wrenfield_repayment_proof_2025-05", "20250912")):
-        _set_dates(OUT / f"{name}.pdf", day)
+    for folder in (LLC_DIR, PRUITT_DIR, WRENFIELD_DIR):
+        folder.mkdir(parents=True, exist_ok=True)
+    quillbrook_statement(LLC_DIR / "7_dp_companion_care_2025-04.pdf", "04/01/2025 - 04/30/2025", LLC_APRIL_OPENING, llc_april)
+    quillbrook_statement(LLC_DIR / "8_dp_companion_care_2025-05.pdf", "05/01/2025 - 05/31/2025", llc_april_close, llc_may)
+    dana_april_close = oxbow_statement(PRUITT_DIR / "9_pruitt_personal_2025-04.pdf", "April 1, 2025 through April 30, 2025", DANA_APRIL_OPENING, DANA_APRIL)
+    dana_may_close = oxbow_statement(PRUITT_DIR / "10_pruitt_personal_2025-05.pdf", "May 1, 2025 through May 31, 2025", dana_april_close, DANA_MAY)
+    ai_generated_statement(WRENFIELD_DIR / "11_wrenfield_repayment_proof_2025-05.pdf")
+    for folder, name, day in ((LLC_DIR, "7_dp_companion_care_2025-04", "20250501"), (LLC_DIR, "8_dp_companion_care_2025-05", "20250601"),
+                              (PRUITT_DIR, "9_pruitt_personal_2025-04", "20250501"), (PRUITT_DIR, "10_pruitt_personal_2025-05", "20250601"),
+                              (WRENFIELD_DIR, "11_wrenfield_repayment_proof_2025-05", "20250912")):
+        _set_dates(folder / f"{name}.pdf", day)
     print(f"LLC: April ends {llc_april_close:,.2f}, May ends {llc_may_close:,.2f}")
     print(f"Dana: April ends {dana_april_close:,.2f}, May ends {dana_may_close:,.2f}")
 
@@ -822,6 +827,103 @@ def main_documents() -> None:
         print("wrote", path.relative_to(OUT.parent))
 
 
+# =================================================================================================
+# Account inventory: the accounts in the case and the statements on file for each
+# =================================================================================================
+# (folder, holder, bank, account type, account number, statements on file, where they came from, not on file / to request)
+INVENTORY = [
+    ("Account_1_Larkspur_Checking_x8701_E_Hartwell", "Evelyn R. Hartwell", "Larkspur Valley Bank", "Classic Checking", "4410228701",
+     "1: March 2025. 2: April 2025. 3: May 2025. Also 5: a copy of April, and 6: a scanned, redacted copy of May",
+     "1-3: the bank (authorization of Laura Byrne, POA). 5: emailed by Dana Pruitt to Laura Byrne, 06/24/2025. "
+     "6: Maple Grove Police Department referral packet",
+     "Statements before March 2025 (the account's normal pattern); June 2025 onward"),
+    ("Account_2_Larkspur_Visa_x7731_E_Hartwell", "Evelyn R. Hartwell", "Larkspur Valley Bank", "Visa Signature credit card",
+     "XXXX XXXX XXXX 7731", "4: May 2025", "The bank (authorization of Laura Byrne, POA)",
+     "March and April 2025 (May opens with a $412.60 balance); June 2025 onward"),
+    ("Account_3_Quillbrook_CU_Business_x3390_DP_Companion_Care", "DP Companion Care LLC (Dana M. Pruitt, member)",
+     "Quillbrook Credit Union", "Business share draft (checking)", "70033390", "7: April 2025. 8: May 2025",
+     "Quillbrook Credit Union, by subpoena", "Account opening documents and signature card; statements from opening to March 2025; June 2025 onward"),
+    ("Account_4_Oxbow_Prairie_Checking_x5520_D_Pruitt", "Dana M. Pruitt", "Oxbow Prairie National Bank", "Prairie Everyday Checking",
+     "005520", "9: April 2025. 10: May 2025", "Oxbow Prairie National Bank, by subpoena",
+     "March 2025 (her pattern before April); June 2025 onward; deposit slips for the cash deposits"),
+    ("Account_5_Wrenfield_Trust_D_Pruitt_questioned", "Dana M. Pruitt (as stated on the document)", "Wrenfield Trust Bank (as stated)",
+     "Not stated", "Printed as ****4417 and as ****4471", "11: May 2025",
+     "Enclosed with opposing counsel's letter of 09/12/2025 (Exhibit I). Not obtained from the bank",
+     "Confirmation from the bank that the account exists, and the statement directly from the bank"),
+]
+REFERENCED = [
+    ("Evelyn R. Hartwell", "Larkspur Valley Bank", "Certificate of deposit", "ending 5521",
+     "Exhibit E; checking, 04/14/2025 ($50,000 CD maturity transfer)", "CD statements and the maturity/closing record"),
+    ("DP Companion Care LLC or Dana M. Pruitt", "Ambrose Lane Motors (lender)", "Auto loan", "not known",
+     "Exhibit H (check 1001, $18,750 down payment); Quillbrook May 2025 (loan payment)", "Loan file, the buyer named on the sale, and the vehicle title"),
+]
+
+
+def account_inventory_files() -> None:
+    """Write statements/Account_Inventory.md (to read on GitHub) and statements/Account_Inventory.pdf (for the case pack)."""
+    md = ["# Account inventory: the Hartwell case", "",
+          "Every account in the case, whose it is, the statements on file and where they came from. Each account's statements are "
+          "in the folder named in the first column. Fictional, for training.", "",
+          "## Accounts with statements on file", "",
+          "| # | Folder | Account holder | Bank | Type | Account number | Statements on file | Source | Not on file (to request) |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    for i, row in enumerate(INVENTORY, start=1):
+        md.append(f"| {i} | `{row[0]}` | " + " | ".join(row[1:]) + " |")
+    md += ["", "## Accounts the documents mention, with no statements on file", "",
+           "| Account holder | Institution | Type | Account number | Where it appears | To request |", "| --- | --- | --- | --- | --- | --- |"]
+    md += ["| " + " | ".join(row) + " |" for row in REFERENCED]
+    md += ["", "File numbers (1 to 11) are the numbers at the start of each statement's file name. In the analyzer, the Summary tab's "
+           "**Accounts** section builds the same inventory from whatever statements are loaded, and flags missing months, balances that "
+           "don't carry forward and two statements for the same period.", ""]
+    (STATEMENTS / "Account_Inventory.md").write_text("\n".join(md), encoding="utf-8")
+
+    path = STATEMENTS / "Account_Inventory.pdf"
+    page = landscape(letter)
+
+    def on_page(c: canvas.Canvas, doc) -> None:
+        """Banner, title and footer on each landscape page."""
+        c.setFillColorRGB(0.85, 0.12, 0.12)
+        c.setFont("Helvetica-Bold", 7.5)
+        c.drawCentredString(page[0] / 2, page[1] - 20, BANNER)
+        c.setFillColorRGB(0.11, 0.16, 0.27)
+        c.setFont("Helvetica-Bold", 15)
+        c.drawString(40, page[1] - 46, "Account inventory: the Hartwell case")
+        c.setFont("Helvetica", 8.5)
+        c.setFillColorRGB(0.35, 0.35, 0.35)
+        c.drawString(40, page[1] - 60, "Every account in the case, whose it is, the statements on file and where they came from. "
+                                       "Each account's statements are in the folder of the same number.")
+        c.setFont("Helvetica", 7)
+        c.drawString(40, 22, FICTION)
+        c.drawRightString(page[0] - 40, 22, f"Page {doc.page}")
+
+    cell = ParagraphStyle("inv", fontName="Helvetica", fontSize=7.6, leading=9.6)
+    head = ParagraphStyle("invh", parent=cell, fontName="Helvetica-Bold", textColor=colors.white)
+    def grid(header, rows, widths):
+        """A wrapped table with a navy header row."""
+        table = Table([[Paragraph(h, head) for h in header]] + [[Paragraph(str(v), cell) for v in r] for r in rows], colWidths=widths, repeatRows=1)
+        table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1D2844")), ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#C5D4E3")),
+                                   ("VALIGN", (0, 0), (-1, -1), "TOP"), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F6FA")])]))
+        return table
+    accounts = grid(["#", "Account holder", "Bank", "Type", "Account number", "Statements on file", "Source", "Not on file (to request)"],
+                    [[i, *row[1:]] for i, row in enumerate(INVENTORY, start=1)],
+                    [0.3 * inch, 1.25 * inch, 1.15 * inch, 1.0 * inch, 1.0 * inch, 1.75 * inch, 1.9 * inch, 1.65 * inch])
+    referenced = grid(["Account holder", "Institution", "Type", "Account number", "Where it appears", "To request"], REFERENCED,
+                      [1.6 * inch, 1.35 * inch, 1.1 * inch, 0.95 * inch, 2.6 * inch, 2.4 * inch])
+    folders = grid(["#", "Folder (in statements/)"], [[i, row[0]] for i, row in enumerate(INVENTORY, start=1)], [0.3 * inch, 5.0 * inch])
+    folders.hAlign = "LEFT"
+    sub = ParagraphStyle("invsub", fontName="Helvetica-Bold", fontSize=10, leading=13, textColor=colors.HexColor("#1D2844"), spaceBefore=4, spaceAfter=5)
+    doc = SimpleDocTemplate(str(path), pagesize=page, leftMargin=40, rightMargin=40, topMargin=76, bottomMargin=40,
+                            title="Account inventory: the Hartwell case", author="Brennan & Thale Elder Law (fictional)",
+                            creator="Brennan & Thale Elder Law (fictional)", producer="Brennan & Thale Elder Law (fictional)")
+    doc.build([Paragraph("Accounts with statements on file", sub), accounts, Spacer(1, 12),
+               Paragraph("Accounts the documents mention, with no statements on file", sub), referenced, Spacer(1, 12),
+               KeepTogether([Paragraph("Where each account's statements are", sub), folders])],
+              onFirstPage=on_page, onLaterPages=on_page)
+    _set_dates(path, "20250915")
+    print("wrote", path.relative_to(OUT.parent), "and Account_Inventory.md")
+
+
 if __name__ == "__main__":
     main_statements()
     main_documents()
+    account_inventory_files()

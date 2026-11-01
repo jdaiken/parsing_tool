@@ -135,7 +135,8 @@ DEBIT_WORDS = (
 # Guessing an unknown bank's name, website and account product from the header (for saving a bank).
 BANK_NAME_RE = re.compile(
     r"\b([A-Z][A-Za-z&.'\-]*(?:\s+[A-Z][A-Za-z&.'\-]*){0,4}\s+"
-    r"(?:Bank|Bancorp|Credit Union|Savings Bank|Trust Company|Trust|Financial|Federal Credit Union|N\.A\.))\b"
+    # Any case, so an all-capitals letterhead ("OXBOW PRAIRIE NATIONAL BANK") is found too.
+    r"(?i:Bank|Bancorp|Credit Union|Savings Bank|Trust Company|Trust|Financial|Federal Credit Union|N\.A\.))\b"
 )
 WEBSITE_RE = re.compile(r"\b(?:www\.)?([a-z0-9\-]+\.(?:com|org|net|bank|us))\b", re.IGNORECASE)
 PRODUCT_RE = re.compile(r"^([A-Z][A-Z &'\-]{2,40}\b(?:CHECKING|SAVINGS|MONEY MARKET|ACCOUNT))\b")
@@ -332,7 +333,8 @@ def suggest_bank_name(full_text: str) -> Optional[str]:
     for line in head_lines:
         match = BANK_NAME_RE.search(line)
         if match and "statement" not in match.group(1).lower():
-            return match.group(1).strip()
+            name = match.group(1).strip()
+            return name.title() if name.isupper() else name
     for line in head_lines:
         match = WEBSITE_RE.search(line)
         if match and "www." in line.lower():

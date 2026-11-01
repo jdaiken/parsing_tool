@@ -22,6 +22,10 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
 OUT = Path(__file__).resolve().parent
+# Statements are filed by account, one folder each (see statements/Account_Inventory.md).
+STATEMENTS = OUT / "statements"
+CHECKING_DIR = STATEMENTS / "Account_1_Larkspur_Checking_x8701_E_Hartwell"
+CARD_DIR = STATEMENTS / "Account_2_Larkspur_Visa_x7731_E_Hartwell"
 BANK = "Larkspur Valley Bank"
 BANK_DOMAIN = "larkspurvalleybank.example"
 PHONE = "1-800-555-0142"
@@ -400,17 +404,19 @@ def main() -> None:
     for name, rows in (("March", march), ("April", april), ("May", may)):
         low = min(r["balance"] for r in rows)
         print(f"{name}: {len(rows)} transactions, ending {rows[-1]['balance']:,.2f}, lowest {low:,.2f}")
-    checking_statement(OUT / "1_checking_2025-03.pdf", "March 01, 2025 through March 31, 2025", MARCH_OPENING, march)
-    checking_statement(OUT / "2_checking_2025-04.pdf", "April 01, 2025 through April 30, 2025", march_close, april)
-    checking_statement(OUT / "3_checking_2025-05.pdf", "May 01, 2025 through May 31, 2025", april_close, may)
-    card_statement(OUT / "4_credit_card_2025-05.pdf")
+    for folder in (CHECKING_DIR, CARD_DIR):
+        folder.mkdir(parents=True, exist_ok=True)
+    checking_statement(CHECKING_DIR / "1_checking_2025-03.pdf", "March 01, 2025 through March 31, 2025", MARCH_OPENING, march)
+    checking_statement(CHECKING_DIR / "2_checking_2025-04.pdf", "April 01, 2025 through April 30, 2025", march_close, april)
+    checking_statement(CHECKING_DIR / "3_checking_2025-05.pdf", "May 01, 2025 through May 31, 2025", april_close, may)
+    card_statement(CARD_DIR / "4_credit_card_2025-05.pdf")
     # Genuine files are written once, the day after the period ends.
-    for name, day in (("1_checking_2025-03", "20250401"), ("2_checking_2025-04", "20250501"),
-                      ("3_checking_2025-05", "20250601"), ("4_credit_card_2025-05", "20250601")):
-        _set_dates(OUT / f"{name}.pdf", day)
-    doctored_april(OUT / "5_checking_2025-04_family_copy.pdf", march_close)
-    scanned_redacted(OUT / "3_checking_2025-05.pdf", OUT / "6_checking_2025-05_scanned_redacted.pdf")
-    _set_dates(OUT / "6_checking_2025-05_scanned_redacted.pdf", "20250718")  # scanned weeks later
+    for folder, name, day in ((CHECKING_DIR, "1_checking_2025-03", "20250401"), (CHECKING_DIR, "2_checking_2025-04", "20250501"),
+                              (CHECKING_DIR, "3_checking_2025-05", "20250601"), (CARD_DIR, "4_credit_card_2025-05", "20250601")):
+        _set_dates(folder / f"{name}.pdf", day)
+    doctored_april(CHECKING_DIR / "5_checking_2025-04_family_copy.pdf", march_close)
+    scanned_redacted(CHECKING_DIR / "3_checking_2025-05.pdf", CHECKING_DIR / "6_checking_2025-05_scanned_redacted.pdf")
+    _set_dates(CHECKING_DIR / "6_checking_2025-05_scanned_redacted.pdf", "20250718")  # scanned weeks later
 
 
 if __name__ == "__main__":

@@ -36,8 +36,8 @@ def _style_sheet(ws) -> None:
 
 
 def _format_currency_columns(ws, headers: list[str]) -> None:
-    """Show money columns (amount, debit, credit, running balance) as $#,##0.00."""
-    currency_cols = {"amount", "debit", "credit", "running_balance"}
+    """Show money columns (amount, debit, credit, running balance; the account inventory's balances and totals) as $#,##0.00."""
+    currency_cols = {"amount", "debit", "credit", "running_balance", "Opening balance", "Closing balance", "Money in", "Money out"}
     for idx, header in enumerate(headers, start=1):
         if header in currency_cols:
             col_letter = get_column_letter(idx)
@@ -55,12 +55,15 @@ def build_workpaper(
     evidence: pd.DataFrame | None = None,
     run_details: list[tuple[str, object]] | None = None,
     case_log: pd.DataFrame | None = None,
+    accounts: pd.DataFrame | None = None,
+    statements: pd.DataFrame | None = None,
 ) -> bytes:
     """
     The forensic workpaper as .xlsx bytes.
 
     Optional parts are added only when given: `document_checks` (authenticity results), `case_notes`
-    and `case_log` (the open project), `evidence` (one row per statement file with its fingerprint)
+    and `case_log` (the open project), `evidence` (one row per statement file with its fingerprint),
+    `accounts` and `statements` (the account inventory and each account's statements, from accounts.py)
     and `run_details` ((label, value) pairs added to the Summary sheet). An empty `raw_text` leaves
     out the Raw_Text sheet.
     """
@@ -105,6 +108,12 @@ def build_workpaper(
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         summary.to_excel(writer, sheet_name="Summary", index=False)
+
+        # Which accounts the statements cover, and each account's statements: the inventory comes first.
+        if accounts is not None and not accounts.empty:
+            accounts.to_excel(writer, sheet_name="Accounts", index=False)
+        if statements is not None and not statements.empty:
+            statements.to_excel(writer, sheet_name="Statements", index=False)
 
         # Which files were analyzed, fingerprinted, so anyone can confirm the analysis used exactly these files.
         if evidence is not None and not evidence.empty:
